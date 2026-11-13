@@ -1,22 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { isSupabaseConfigured, supabase } from './supabase';
-
-const MODULES = [
-  ['Data_Karyawan', 'Data Karyawan', 'people'],
-  ['Data_Kontrak', 'Data Kontrak', 'contract'],
-  ['Data_Resign', 'Data Resign', 'exit'],
-  ['REKAP_SP', 'Pembinaan / SP', 'discipline'],
-  ['TNA_Plan', 'TNA Plan', 'training'],
-  ['TNA_Realisasi', 'TNA Realisasi', 'training'],
-  ['Data_Kompetensi', 'Data Kompetensi', 'certificate'],
-  ['Data_Kebutuhan', 'Kebutuhan Tenaga Kerja', 'staffing'],
-  ['Data_PICA', 'PICA', 'action'],
-  ['Data_Rekrutmen', 'Rekrutmen', 'recruitment'],
-  ['Data_ATR', 'ATR', 'attendance'],
-  ['Data_Unit', 'Data Unit', 'truck'],
-  ['Data_LV & Bus', 'Data LV & Bus', 'vehicle']
-];
+import Icon from './Icon.jsx';
+import { MODULES } from './modules.js';
+import { ModeToggle, ThemeDots, useAppearance } from './appearance.jsx';
+import SettingsPage from './Settings.jsx';
 
 const PRIVATE_EMPLOYEE_FIELDS = new Set([
   'tempat lahir', 'tanggal lahir', 'jenis kelamin', 'status', 'agama', 'pendidikan',
@@ -75,28 +63,80 @@ function displayValue(value, key = '') {
   return String(value);
 }
 
+
 function makeHeaders(rows, moduleKey) {
-  const specialTna = moduleKey === 'TNA_Plan' || moduleKey === 'TNA_Realisasi';
-  const baseHeader = specialTna ? (rows[2] || []) : (rows[0] || []);
-  const secondaryHeader = specialTna ? (rows[1] || []) : [];
-  const count = Math.max(baseHeader.length, secondaryHeader.length);
+  const specialTna =
+    moduleKey === 'TNA_Plan' ||
+    moduleKey === 'TNA_Realisasi';
+
+  // Header khusus Data Rekrutmen
+if (moduleKey === 'Data_Rekrutmen') {
+  return [
+    'ID',
+    'Nama Kandidat',
+    'Jabatan Dilamar',
+    'Sumber',
+    'Tanggal Lamar',
+    'Tahap Saat Ini',
+    'Hasil Akhir',
+    'Alasan Ditolak',
+    'Tanggal Diterima',
+    'No. HP',
+    'Catatan',
+    'Time to Hire (Hari)'
+  ];
+}
+
+  const baseHeader = specialTna
+    ? (rows[2] || [])
+    : (rows[0] || []);
+
+  const secondaryHeader = specialTna
+    ? (rows[1] || [])
+    : [];
+
+  const count = Math.max(
+    baseHeader.length,
+    secondaryHeader.length
+  );
+
   const headers = [];
   const used = new Set();
+
   for (let i = 0; i < count; i += 1) {
     let label = baseHeader[i];
-    if (specialTna && i >= 7 && secondaryHeader[i]) label = secondaryHeader[i];
-    if (label === null || label === undefined || String(label).trim() === '') {
-      if (moduleKey === 'Data_Kebutuhan' && i === 1) label = 'Departemen';
-      else if (moduleKey === 'Data_ATR' && i === 4) label = 'Departemen';
-      else label = `Kolom_${i + 1}`;
+
+    if (specialTna && i >= 7 && secondaryHeader[i]) {
+      label = secondaryHeader[i];
     }
+
+    if (
+      label === null ||
+      label === undefined ||
+      String(label).trim() === ''
+    ) {
+      if (moduleKey === 'Data_Kebutuhan' && i === 1) {
+        label = 'Departemen';
+      } else if (moduleKey === 'Data_ATR' && i === 4) {
+        label = 'Departemen';
+      } else {
+        label = `Kolom_${i + 1}`;
+      }
+    }
+
     let clean = String(label).trim();
-    if (used.has(clean)) clean = `${clean}_${i + 1}`;
+
+    if (used.has(clean)) {
+      clean = `${clean}_${i + 1}`;
+    }
+
     used.add(clean);
     headers.push(clean);
   }
+
   return headers;
 }
+
 
 function parseWorkbookSheet(sheet, moduleKey) {
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true, blankrows: false });
@@ -116,39 +156,7 @@ function parseWorkbookSheet(sheet, moduleKey) {
   return result;
 }
 
-function Icon({ name, size = 18 }) {
-  const paths = {
-    grid: <><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></>,
-    people: <><path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M20 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></>,
-    contract: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h8"/></>,
-    exit: <><path d="M10 17l5-5-5-5M15 12H3"/><path d="M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6"/></>,
-    discipline: <><path d="M12 3 3 7v5c0 5 3.8 8 9 9 5.2-1 9-4 9-9V7z"/><path d="M12 8v5M12 16h.01"/></>,
-    training: <><path d="m3 7 9-4 9 4-9 4zM5 9v6c4 3 10 3 14 0V9M21 7v7"/></>,
-    certificate: <><circle cx="12" cy="8" r="5"/><path d="m8.5 12-1 9 4.5-2.5 4.5 2.5-1-9"/></>,
-    staffing: <><path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6M9 9h.01M15 9h.01"/></>,
-    action: <><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></>,
-    recruitment: <><circle cx="9" cy="8" r="4"/><path d="M3 21v-2a6 6 0 0 1 12 0v2M19 8v6M16 11h6"/></>,
-    attendance: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>,
-    truck: <><path d="M3 6h11v12H3zM14 10h4l3 4v4h-7z"/><circle cx="7.5" cy="19" r="1.5"/><circle cx="17.5" cy="19" r="1.5"/></>,
-    vehicle: <><path d="M5 16h14l-1.3-5.2A2 2 0 0 0 15.8 9H8.2a2 2 0 0 0-1.9 1.8z"/><path d="M3 16v3h2M21 16v3h-2M7 19h10"/><circle cx="7" cy="16" r="1"/><circle cx="17" cy="16" r="1"/></>,
-    search: <><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></>,
-    upload: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></>,
-    plus: <><path d="M12 5v14M5 12h14"/></>,
-    refresh: <><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.5 9A7 7 0 0 1 18 6l2 6M4 12l2 6a7 7 0 0 0 12.5-3"/></>,
-    logout: <><path d="M10 17l5-5-5-5M15 12H3"/><path d="M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6"/></>,
-    edit: <><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z"/></>,
-    trash: <><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v5M14 11v5"/></>,
-    close: <><path d="m18 6-12 12M6 6l12 12"/></>,
-    lock: <><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></>,
-    chart: <><path d="M3 3v18h18M8 16V9M13 16V5M18 16v-6"/></>,
-    clock: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>,
-    check: <path d="m5 12 4 4L19 6"/>,
-    alert: <><path d="M10.3 3.9 2.7 17a2 2 0 0 0 1.7 3h15.2a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></>
-  };
-  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name] || paths.grid}</svg>;
-}
-
-function Login({ onLogin, busy, error }) {
+function Login({ onLogin, busy, error, appearance }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const submit = (event) => {
@@ -157,20 +165,29 @@ function Login({ onLogin, busy, error }) {
   };
   return (
     <main className="login-shell">
-      <div className="login-art">
-        <div className="brand-lockup"><div className="brand-mark">REP</div><div><strong>PEOPLE & OPERATIONS</strong><span>INTEGRATED DASHBOARD</span></div></div>
-        <div className="login-hero-copy"><div className="eyebrow">REPUBLIC ENGINEERING PARTNER</div><h1>Data terhubung.<br/><em>Keputusan lebih cepat.</em></h1><p>Portal terpusat untuk data karyawan, kompetensi, kontrak, rekrutmen, dan operasional REP.</p></div>
-        <div className="login-foot">INTERNAL MANAGEMENT SYSTEM <span>•</span> 2026</div>
+      <div className="login-tools"><ThemeDots appearance={appearance} /><ModeToggle appearance={appearance} /></div>
+      <div className="login-card">
+        <div className="login-brand">
+  <img
+    src="/logo-pt-rep.png"
+    alt="Logo PT. Ryan Eka Pratama"
+    className="login-logo"
+  />
+  <div>
+    <strong>PT. RYAN EKA PRATAMA</strong>
+    <span>SITE BONTANG</span>
+  </div>
+</div>
+        <form className="login-form" onSubmit={submit}>
+          <div className="eyebrow muted">SELAMAT DATANG KEMBALI</div><h2>Masuk ke dashboard</h2><p className="subtle">Gunakan username dan password yang diberikan administrator.</p>
+          <label>Username<input value={username} onChange={e=>setUsername(e.target.value)} placeholder="Masukkan username" autoComplete="username" required /></label>
+          <label>Password<input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Masukkan password" autoComplete="current-password" required /></label>
+          {error && <div className="form-error" role="alert">{error}</div>}
+          <button className="btn primary full" type="submit" disabled={busy}>{busy ? 'Memverifikasi...' : 'Masuk'} <span>→</span></button>
+          <div className="login-security"><Icon name="lock" size={15}/> Akses terbatas untuk pengguna terdaftar</div>
+        </form>
       </div>
-      <div className="login-panel"><form className="login-form" onSubmit={submit}>
-        <div className="mobile-brand">REP <span>PEOPLE & OPERATIONS</span></div>
-        <div className="eyebrow muted">SELAMAT DATANG KEMBALI</div><h2>Masuk ke dashboard</h2><p className="subtle">Gunakan username dan password yang diberikan administrator.</p>
-        <label>Username<input value={username} onChange={e=>setUsername(e.target.value)} placeholder="Masukkan username" autoComplete="username" required /></label>
-        <label>Password<input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Masukkan password" autoComplete="current-password" required /></label>
-        {error && <div className="form-error">{error}</div>}
-        <button className="btn primary full" type="submit" disabled={busy}>{busy ? 'Memverifikasi...' : 'Masuk'} <span>→</span></button>
-        <div className="login-security"><Icon name="lock" size={15}/> Akses terbatas untuk pengguna terdaftar</div>
-      </form></div>
+      <div className="login-foot">INTERNAL MANAGEMENT SYSTEM • 2026</div>
     </main>
   );
 }
@@ -201,27 +218,490 @@ function DashboardHome({ overview, loading, onOpenModule, isAdmin, onImport }) {
   </div>;
 }
 
+
 function DataTablePage({ module, rows, loading, canWrite, onAdd, onEdit, onDelete }) {
   const [query, setQuery] = useState('');
   const [showAllColumns, setShowAllColumns] = useState(false);
-  useEffect(() => { setQuery(''); setShowAllColumns(false); }, [module]);
-  const columns = useMemo(() => rows.length ? Object.keys(rows[0].data || {}) : [], [rows]);
-  const visibleColumns = showAllColumns ? columns : columns.slice(0, 8);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const pageSize = 20;
+
+  useEffect(() => {
+    setQuery('');
+    setShowAllColumns(false);
+    setCurrentPage(1);
+  }, [module]);
+
+  
+const columns = useMemo(() => {
+  const dataColumns = rows.length
+    ? Object.keys(rows[0].data || {})
+    : [];
+
+  const normalize = (value) =>
+    String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+  const moduleName = normalize(module).replace(/[^a-z0-9]/g, '');
+
+  const employeeColumnOrder = [
+    'AMODI', 'NRP', 'NRPP', 'Nama', 'Jabatan',
+    'Departemen', 'District', 'Perusahaan',
+    'Status Karyawan', 'Tanggal Masuk', 'Awal Kontrak',
+    'Akhir Kontrak', 'Keterangan', 'Tanggal Resign',
+    'Jenis Resign', 'Tempat Lahir', 'Tanggal Lahir',
+    'Jenis Kelamin', 'Status', 'Agama', 'Pendidikan',
+    'Email', 'Gol. Darah', 'Alamat', 'Ibu', 'Istri',
+    'Domisili', 'Ring', 'HP Istri', 'Kontak Darurat',
+    'NIK', 'CP', 'NPWP', 'BPJS TK', 'BPJS Kes',
+    'LV', 'Bus', 'P360', 'FMX420', 'FMX400',
+    'PC210', 'PC350', 'D85', 'Simpol', 'Simper',
+    'Authority', 'Escorting', 'HighRisk',
+    'PowerTools', 'Foto'
+  ];
+
+  const contractOrder = [
+    'AMODI', 'NRP', 'Nama', 'Jabatan', 'Departemen',
+    'Awal Kontrak', 'Akhir Kontrak', 'Keterangan', 'Dicatat'
+  ];
+
+  const resignOrder = [
+    'AMODI', 'NRP', 'Nama', 'Jabatan', 'Departemen',
+    'Tanggal Masuk', 'Tanggal Resign', 'Jenis', 'Keterangan'
+  ];
+
+  const coachingOrder = [
+    'AMODI', 'NRP', 'NAMA', 'JABATAN', 'DEPARTEMEN',
+    'TANGGAL', 'JENIS PEMBINAAN', 'DESKRIPSI PELANGGARAN',
+    'MASA BERLAKU', 'SISA PEMBINAAN', 'STATUS'
+  ];
+
+const tnaOrder = [
+  'AMODI', 'NRP', 'NAMA', 'JABATAN', 'DEPARTMENT', 'PLAN',
+
+  // LEGAL COMPLIANCE
+  'Ahli K3 Umum',
+  'Ahli K3 Kebakaran Kelas C (Regu Penanggulangan Kebakaran)',
+  'Ahli K3 Kebakaran Kelas D (Petugas Peran Kebakaran)',
+  'Ahli K3 Listrik',
+  'Teknisi K3 Listrik',
+  'Rigger (Juru Ikat)',
+  'Auditor SMKP',
+  'Juru Las',
+  'AK3 Teknisi Pesawat Angkat Angkut',
+  'HIMU',
+  'Petugas P3K',
+  'POP',
+  'POM',
+  'TIM TANGGAP DARURAT',
+
+  // MANDATORY PROGRAM
+  'DDT',
+  'DRD',
+  'Fatigue Awareness',
+  'SHE Pertama',
+  'SHE Pertama Plus',
+  'High Risk',
+  'Work Readiness',
+  'Manual Handling',
+  'LOTO',
+  'Hand & Finger',
+  'Power Tools',
+  'Remove & Install Tyre',
+  'Job Safety Analysis',
+  'Training Simulator 7 Danger',
+  'Instruktur Representative',
+  'Pengelolaan Hidrocarbon',
+  'PSMS Coaching',
+
+  // PROGRAM INTERNAL
+  'Sertifikasi BMC',
+  'SERTIFIKASI OPERATOR DT',
+  'SERTIFIKASI OPERATOR A2B',
+
+];
+const tnaRealisasiOrder = [
+  'AMODI', 'NRP', 'NAMA', 'POSITION', 'DEPARTMENT',
+  'AKTUAL',
+
+  'Ahli K3 Umum',
+  'Ahli K3 Kebakaran Kelas C (Regu Penanggulangan Kebakaran)',
+  'Ahli K3 Kebakaran Kelas D (Petugas Peran Kebakaran)',
+  'Ahli K3 Listrik',
+  'Teknisi K3 Listrik',
+  'Rigger (Juru Ikat)',
+  'Auditor SMKP',
+  'Juru Las',
+  'AK3 Teknisi Pesawat Angkat Angkut',
+  'HIMU',
+  'Petugas P3K',
+  'POP',
+  'POM',
+  'TIM TANGGAP DARURAT',
+
+  'DDT',
+  'DRD',
+  'Fatigue Awareness',
+  'SHE Pertama',
+  'SHE Pertama Plus',
+  'High Risk',
+  'Work Readiness',
+  'Manual Handling',
+  'LOTO',
+  'Hand & Finger',
+  'Power Tools',
+  'Remove & Install Tyre',
+  'Job Safety Analysis',
+  'Training Simulator 7 Danger',
+  'Instruktur Representative',
+  'Pengelolaan Hidrocarbon',
+  'PSMS Coaching',
+
+  'Sertifikasi BMC',
+  'SERTIFIKASI OPERATOR DT',
+  'SERTIFIKASI OPERATOR A2B',
+
+  'Induksi Pasca Cuti 1',
+  'Induksi Pasca Cuti 2',
+  'Induksi Pasca Cuti 3'
+];
+
+  const competencyOrder = [
+    'AMODI', 'NRP', 'NAMA', 'JABATAN', 'DEPARTEMEN',
+    'Kategori', 'Kompetensi', 'No. Registrasi',
+    'Tgl Sertifikat', 'Expired', 'Keterangan'
+  ];
+
+  const atrOrder = [
+    'AMODI', 'NRP', 'Nama', 'Jabatan', 'DEPARTEMEN',
+    'JAN', 'FEB', 'MAR', 'APR', 'MEI', 'JUN',
+    'JUL', 'AGU', 'SEP', 'OKT', 'NOV', 'DES', 'YTD'
+  ];
+
+  // Mencari nama kolom asli tanpa membedakan huruf besar/kecil.
+  // Nama kolom asli tetap dipakai agar data tidak hilang.
+  const findColumn = (name) => {
+    const aliases = {
+  'amodi': ['AMODI', 'NRP AMODI'],
+  'department': ['DEPARTMENT', 'DEPARTEMEN', 'DEPARTEMENT'],
+  'departemen': ['DEPARTEMEN', 'DEPARTEMENT', 'DEPARTMENT'],
+  'jenis': ['Jenis', 'Jenis Resign'],
+
+  'induksi pasca cuti 1': [
+    'Induksi Pasca Cuti (referensi, tidak dihitung)'
+  ],
+  'induksi pasca cuti 2': ['Kolom_26'],
+  'induksi pasca cuti 3': ['Kolom_27']
+};
+    const candidates = aliases[normalize(name)] || [name];
+
+    return dataColumns.find(col =>
+      candidates.some(candidate =>
+        normalize(col) === normalize(candidate)
+      )
+    );
+  };
+
+  const arrangeColumns = (order) => {
+  const orderedColumns = order
+    .map(findColumn)
+    .filter((col, index, arr) =>
+      col && arr.indexOf(col) === index
+    );
+
+  const remainingColumns = dataColumns.filter(
+    col => !orderedColumns.includes(col)
+  );
+
+  const isTnaModule =
+    moduleName.includes('tnaplan') ||
+    moduleName.includes('tnarealisasi');
+
+  return [
+    ...orderedColumns,
+    ...remainingColumns.filter(col =>
+      !(isTnaModule && normalize(col) === 'no')
+    )
+  ];
+};
+
+  if (moduleName === 'datakaryawan') {
+    return arrangeColumns(employeeColumnOrder);
+  }
+
+  if (moduleName.includes('kontrak')) {
+    return arrangeColumns(contractOrder);
+  }
+
+  if (moduleName.includes('resign')) {
+  return arrangeColumns(resignOrder);
+}
+
+if (
+  moduleName === 'rekapsp' ||
+  moduleName.includes('pembinaan') ||
+  moduleName === 'sp'
+) {
+  return arrangeColumns(coachingOrder);
+}
+
+if (moduleName.includes('tnarealisasi')) {
+  return arrangeColumns(tnaRealisasiOrder);
+}
+
+if (moduleName.includes('tnaplan')) {
+  return arrangeColumns(tnaOrder);
+}
+
+if (moduleName.includes('kompetensi')) {
+  return arrangeColumns(competencyOrder);
+}
+
+if (moduleName === 'atr' || moduleName === 'dataatr') {
+  return arrangeColumns(atrOrder);
+}
+  const amodiColumn = findColumn('AMODI');
+
+  return amodiColumn
+    ? [amodiColumn, ...dataColumns.filter(col => col !== amodiColumn)]
+    : dataColumns;
+}, [rows, module]);
+
+const visibleColumns = showAllColumns
+  ? columns
+  : columns.slice(0, 8);
+
+  
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
+
     if (!q) return rows;
-    return rows.filter(row => Object.entries(row.data || {}).some(([key,value]) => `${key} ${displayValue(value,key)}`.toLowerCase().includes(q)));
+
+    return rows.filter(row =>
+      Object.entries(row.data || {}).some(([key, value]) =>
+        `${key} ${displayValue(value, key)}`.toLowerCase().includes(q)
+      )
+    );
   }, [rows, query]);
-  const label = MODULES.find(x=>x[0]===module)?.[1] || module;
-  return <div className="page-content">
-    <div className="welcome-row module-title-row"><div><div className="eyebrow muted">DATA MASTER / OPERASIONAL</div><h1>{label}</h1><p className="subtle">Kelola, cari, dan pantau catatan {label.toLowerCase()}.</p></div><div className="module-actions">{canWrite && <button className="btn primary" onClick={onAdd}><Icon name="plus" size={16}/> Tambah Data</button>}</div></div>
-    <section className="panel table-panel"><div className="table-toolbar"><div className="table-count"><strong>{filtered.length.toLocaleString('id-ID')}</strong> <span>baris data</span><i/> <span className="sync-text"><span className="pulse"/> realtime aktif</span></div><div className="table-tools"><div className="search-box"><Icon name="search" size={16}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Cari data..." /></div><button className="btn light" onClick={()=>setShowAllColumns(!showAllColumns)}>{showAllColumns ? 'Ringkas kolom' : 'Semua kolom'}</button></div></div>
-      {loading ? <div className="loading-state"><div className="spinner"/>Memuat data...</div> : rows.length === 0 ? <div className="empty-state"><div className="empty-chart-mark"><Icon name="grid" size={24}/></div><strong>Belum ada data pada menu ini</strong><span>Admin perlu mengimpor file Excel sumber terlebih dahulu.</span></div> : <div className="table-scroll"><table><thead><tr>{visibleColumns.map(col=><th key={col}>{col}</th>)}{canWrite && <th className="action-head">AKSI</th>}</tr></thead><tbody>{filtered.map(row=><tr key={row.id}>{visibleColumns.map(col=><td key={col} title={displayValue(row.data?.[col],col)}>{displayValue(row.data?.[col],col)}</td>)}{canWrite && <td className="row-actions"><button title="Edit" onClick={()=>onEdit(row)}><Icon name="edit" size={15}/></button><button title="Hapus" onClick={()=>onDelete(row)}><Icon name="trash" size={15}/></button></td>}</tr>)}</tbody></table>{filtered.length===0 && <div className="no-results">Tidak ada data yang cocok dengan pencarian.</div>}</div>}
-      {rows.length>0 && <div className="table-footer">Menampilkan {filtered.length.toLocaleString('id-ID')} dari {rows.length.toLocaleString('id-ID')} baris <span>Perubahan tersinkron otomatis</span></div>}
-    </section>
-    {!canWrite && <div className="permission-note"><Icon name="lock" size={15}/> Anda memiliki akses baca. Hubungi administrator untuk mendapatkan hak edit.</div>}
-  </div>;
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filtered.length / pageSize)
+  );
+
+  const safePage = Math.min(currentPage, totalPages);
+
+  const startIndex = (safePage - 1) * pageSize;
+
+  const pageRows = filtered.slice(
+    startIndex,
+    startIndex + pageSize
+  );
+
+  const pageNumbers = [
+    ...new Set([
+      1,
+      safePage - 1,
+      safePage,
+      safePage + 1,
+      totalPages
+    ].filter(page => page >= 1 && page <= totalPages))
+  ].sort((a, b) => a - b);
+
+  const label = MODULES.find(x => x[0] === module)?.[1] || module;
+
+  return (
+    <div className="page-content">
+      <div className="welcome-row module-title-row">
+        <div>
+          <div className="eyebrow muted">DATA MASTER / OPERASIONAL</div>
+          <h1>{label}</h1>
+          <p className="subtle">
+            Kelola, cari, dan pantau catatan {label.toLowerCase()}.
+          </p>
+        </div>
+
+        <div className="module-actions">
+          {canWrite && (
+            <button className="btn primary" onClick={onAdd}>
+              <Icon name="plus" size={16}/> Tambah Data
+            </button>
+          )}
+        </div>
+      </div>
+
+      <section className="panel table-panel">
+        <div className="table-toolbar">
+          <div className="table-count">
+            <strong>{filtered.length.toLocaleString('id-ID')}</strong>
+            {' '}<span>baris data</span>
+            <i/>
+            <span className="sync-text">
+              <span className="pulse"/> realtime aktif
+            </span>
+          </div>
+
+          <div className="table-tools">
+            <div className="search-box">
+              <Icon name="search" size={16}/>
+              <input
+                value={query}
+                onChange={e => {
+                  setQuery(e.target.value);
+                  setCurrentPage(1);
+                }}
+                placeholder="Cari data..."
+              />
+            </div>
+
+            <button
+              className="btn light"
+              onClick={() => setShowAllColumns(!showAllColumns)}
+            >
+              {showAllColumns ? 'Ringkas kolom' : 'Semua kolom'}
+            </button>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="loading-state">
+            <div className="spinner"/>Memuat data...
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-chart-mark">
+              <Icon name="grid" size={24}/>
+            </div>
+            <strong>Belum ada data pada menu ini</strong>
+            <span>Admin perlu mengimpor file Excel sumber terlebih dahulu.</span>
+          </div>
+        ) : (
+          <>
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    {visibleColumns.map(col => (
+  <th key={col} className="wrap-header">
+  {col === 'NRP AMODI'
+    ? 'AMODI'
+    : col === 'Induksi Pasca Cuti (referensi, tidak dihitung)'
+      ? 'Induksi Pasca Cuti 1'
+      : col === 'Kolom_26'
+        ? 'Induksi Pasca Cuti 2'
+        : col === 'Kolom_27'
+          ? 'Induksi Pasca Cuti 3'
+          : col}
+</th>
+))}
+                    {canWrite && <th className="action-head">AKSI</th>}
+                  </tr>
+                </thead>
+
+    
+<tbody>
+  {pageRows.map(row => (
+    <tr key={row.id}>
+      {visibleColumns.map(col => (
+        <td
+          key={col}
+          title={displayValue(row.data?.[col], col)}
+          style={{
+            textAlign:
+              (module === 'Data_ATR' &&
+                ['JAN', 'FEB', 'MAR', 'APR', 'MEI', 'JUN',
+                 'JUL', 'AGU', 'SEP', 'OKT', 'NOV', 'DES', 'YTD']
+                  .includes(col.toUpperCase()))
+                ? 'center'
+                : undefined
+          }}
+        >
+          {displayValue(row.data?.[col], col)}
+        </td>
+      ))}
+
+      {canWrite && (
+        <td className="row-actions">
+          <button title="Edit" onClick={() => onEdit(row)}>
+            <Icon name="edit" size={15}/>
+          </button>
+          <button title="Hapus" onClick={() => onDelete(row)}>
+            <Icon name="trash" size={15}/>
+          </button>
+        </td>
+      )}
+    </tr>
+  ))}
+</tbody>
+
+              </table>
+
+              {filtered.length === 0 && (
+                <div className="no-results">
+                  Tidak ada data yang cocok dengan pencarian.
+                </div>
+              )}
+            </div>
+
+            <div className="table-footer">
+              Menampilkan {filtered.length === 0 ? 0 : startIndex + 1}
+              {'–'}
+              {Math.min(startIndex + pageSize, filtered.length)}
+              {' '}dari {filtered.length.toLocaleString('id-ID')} baris
+              <span>20 baris per halaman</span>
+            </div>
+
+            
+            
+            {filtered.length > 0 && (
+              <div className="pagination">
+                <button
+                  className="btn light"
+                  disabled={safePage === 1}
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                >
+                  &laquo; Sebelumnya
+                </button>
+
+                <div className="pagination-pages">
+                  {pageNumbers.map((page, index) => (
+                    <span className="pagination-item" key={page}>
+                      {index > 0 && page - pageNumbers[index - 1] > 1 && (
+                        <span className="pagination-dots">...</span>
+                      )}
+
+                      <button
+                        className={`btn ${safePage === page ? 'primary' : 'light'}`}
+                        onClick={() => setCurrentPage(page)}
+                      >
+                        {page}
+                      </button>
+                    </span>
+                  ))}
+                </div>
+
+                <button
+                  className="btn light"
+                  disabled={safePage >= totalPages}
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                >
+                  Berikutnya &raquo;
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </section>
+
+      {!canWrite && (
+        <div className="permission-note">
+          <Icon name="lock" size={15}/>
+          Anda memiliki akses baca. Hubungi administrator untuk mendapatkan hak edit.
+        </div>
+      )}
+    </div>
+  );
 }
+
 
 function RecordModal({ module, row, columns, canEditPrivate, onClose, onSave, busy }) {
   const [form, setForm] = useState(() => ({ ...(row?.data || {}) }));
@@ -263,13 +743,95 @@ export default function App() {
   const [notice, setNotice] = useState('');
   const [importBusy, setImportBusy] = useState(false);
   const [importStatus, setImportStatus] = useState('');
+  const [exportBusy, setExportBusy] = useState(false);
   const fileInputRef = React.useRef(null);
+  const appearance = useAppearance();
 
   const isAdmin = profile?.role === 'admin';
   const canEditPrivate = ['admin','hr'].includes(profile?.role);
   const allowedModules = useMemo(() => isAdmin ? MODULES : MODULES.filter(m => permissions.some(p=>p.module_key===m[0] && p.can_read)), [isAdmin, permissions]);
   const activeCanWrite = isAdmin || permissions.some(p=>p.module_key===activeModule && p.can_write);
+const exportAllData = async (selectedModules = []) => {
+  if (!isAdmin || exportBusy) return;
 
+  if (!selectedModules.length) {
+    setNotice('Pilih minimal satu sheet untuk diunduh.');
+    return;
+  }
+
+  setExportBusy(true);
+
+  try {
+    const workbook = XLSX.utils.book_new();
+    const usedSheetNames = new Set();
+
+    for (const [moduleKey, moduleLabel] of MODULES) {
+      if (!selectedModules.includes(moduleKey)) continue;
+
+      let allRows = [];
+      let offset = 0;
+      let batch = [];
+
+      do {
+        const { data, error } = await supabase
+          .from('app_data')
+          .select('row_index,data')
+          .eq('module', moduleKey)
+          .order('row_index', { ascending: true })
+          .range(offset, offset + 999);
+
+        if (error) throw new Error(`${moduleLabel}: ${error.message}`);
+
+        batch = data || [];
+        allRows.push(...batch);
+        offset += batch.length;
+      } while (batch.length === 1000);
+
+      const headers = [...new Set(
+        allRows.flatMap(row => Object.keys(row.data || {}))
+      )];
+
+      const sheetRows = headers.length
+        ? [
+            headers,
+            ...allRows.map(row =>
+              headers.map(header => row.data?.[header] ?? '')
+            )
+          ]
+        : [['Tidak ada data']];
+
+      const worksheet = XLSX.utils.aoa_to_sheet(sheetRows);
+
+      let sheetName = String(moduleLabel || moduleKey)
+        .replace(/[\\/?*[\]:]/g, ' ')
+        .trim()
+        .slice(0, 31) || 'Data';
+
+      const baseName = sheetName;
+      let suffix = 2;
+
+      while (usedSheetNames.has(sheetName)) {
+        const tail = `_${suffix++}`;
+        sheetName = `${baseName.slice(0, 31 - tail.length)}${tail}`;
+      }
+
+      usedSheetNames.add(sheetName);
+      XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+    }
+
+    XLSX.writeFile(
+      workbook,
+      `REP_Data_Terpilih_${new Date().toISOString().slice(0, 10)}.xlsx`
+    );
+
+    setNotice('Data terpilih berhasil diunduh.');
+  } catch (error) {
+    setNotice(`Gagal mengunduh data: ${error.message || 'Terjadi kesalahan.'}`);
+  } finally {
+    setExportBusy(false);
+  }
+};
+  
   const loadProfile = useCallback(async (user) => {
     if (!user) { setProfile(null); setPermissions([]); return; }
     const [{ data: prof }, { data: perms }] = await Promise.all([
@@ -304,22 +866,29 @@ export default function App() {
     setOverviewLoading(false);
   }, [session]);
 
-  const loadModule = useCallback(async (moduleKey) => {
-    if (!session?.user || moduleKey === 'Dashboard') return;
-    setLoading(true);
-    const { data, error } = await supabase.from('app_data').select('id,module,row_index,data,updated_at').eq('module', moduleKey).order('row_index', { ascending: true });
-    if (error) { setNotice(`Gagal memuat data: ${error.message}`); setRows([]); setLoading(false); return; }
-    let merged = data || [];
-    if (moduleKey === 'Data_Karyawan' && canEditPrivate) {
-      const { data: privateRows, error: privateError } = await supabase.from('app_private_data').select('row_index,data').eq('module', moduleKey);
-      if (!privateError && privateRows?.length) {
-        const privateMap = new Map(privateRows.map(r=>[r.row_index,r.data]));
-        merged = merged.map(r=>({ ...r, data: { ...(r.data || {}), ...(privateMap.get(r.row_index) || {}) } }));
-      }
-    }
-    setRows(merged);
+  
+const loadModule = useCallback(async (moduleKey) => {
+  if (!session?.user || moduleKey === 'Dashboard' || moduleKey === 'Settings') return;
+
+  setLoading(true);
+
+  const { data, error } = await supabase
+    .from('app_data')
+    .select('id,module,row_index,data,updated_at')
+    .eq('module', moduleKey)
+    .order('row_index', { ascending: true });
+
+  if (error) {
+    setNotice(`Gagal memuat data: ${error.message}`);
+    setRows([]);
     setLoading(false);
-  }, [session, canEditPrivate]);
+    return;
+  }
+
+  setRows(data || []);
+  setLoading(false);
+}, [session]);
+
 
   useEffect(() => {
     if (!session?.user) return;
@@ -327,7 +896,7 @@ export default function App() {
   }, [session, loadOverview]);
 
   useEffect(() => {
-    if (activeModule !== 'Dashboard') loadModule(activeModule);
+    if (activeModule !== 'Dashboard' && activeModule !== 'Settings') loadModule(activeModule);
   }, [activeModule, loadModule]);
 
   useEffect(() => {
@@ -390,59 +959,122 @@ export default function App() {
     };
   }, [overviewData]);
 
-  const openImport = () => fileInputRef.current?.click();
-  const importWorkbook = async (file) => {
-    if (!file || !isAdmin) return;
-    setImportBusy(true); setImportStatus('Membaca workbook...');
-    try {
-      const buffer = await file.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
-      const expected = MODULES.map(m=>m[0]);
-      let completed = 0;
-      for (const moduleKey of expected) {
-        const sheet = workbook.Sheets[moduleKey];
-        if (!sheet) continue;
-        const parsed = parseWorkbookSheet(sheet, moduleKey);
-        setImportStatus(`Mengimpor ${MODULES.find(m=>m[0]===moduleKey)?.[1] || moduleKey}...`);
-        const { error: deleteError } = await supabase.from('app_data').delete().eq('module', moduleKey);
-        if (deleteError) throw new Error(`${moduleKey}: ${deleteError.message}`);
-        if (moduleKey === 'Data_Karyawan') {
-          const { error: privateDeleteError } = await supabase.from('app_private_data').delete().eq('module', moduleKey);
-          if (privateDeleteError) throw new Error(`Data privat: ${privateDeleteError.message}`);
-        }
-        const publicRecords = [];
-        const privateRecords = [];
-        parsed.forEach(record=>{
-          if (moduleKey === 'Data_Karyawan') {
-            const split = splitEmployeeRecord(record.data);
-            publicRecords.push({ module: moduleKey, row_index: record.row_index, data: split.publicData });
-            if (Object.keys(split.privateData).length) privateRecords.push({ module: moduleKey, row_index: record.row_index, data: split.privateData });
-          } else {
-            publicRecords.push({ module: moduleKey, row_index: record.row_index, data: record.data });
-          }
-        });
-        for (let i=0; i<publicRecords.length; i+=100) {
-          const { error } = await supabase.from('app_data').upsert(publicRecords.slice(i,i+100), { onConflict: 'module,row_index' });
-          if (error) throw new Error(`${moduleKey}: ${error.message}`);
-        }
-        for (let i=0; i<privateRecords.length; i+=100) {
-          const { error } = await supabase.from('app_private_data').upsert(privateRecords.slice(i,i+100), { onConflict: 'module,row_index' });
-          if (error) throw new Error(`Data privat ${moduleKey}: ${error.message}`);
-        }
-        completed += 1;
+const openImport = () => fileInputRef.current?.click();
+
+const importWorkbook = async (file) => {
+  if (!file || !isAdmin) return;
+
+  setImportBusy(true);
+  setImportStatus('Membaca workbook...');
+
+  try {
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, {
+      type: 'array',
+      cellDates: true
+    });
+
+    // Persiapkan dan validasi semua sheet sebelum mengubah database
+    const preparedSheets = [];
+
+    for (const moduleKey of MODULES.map(m => m[0])) {
+      const sheet = workbook.Sheets[moduleKey];
+
+      if (!sheet) continue;
+
+      const parsed = parseWorkbookSheet(sheet, moduleKey);
+
+      if (!parsed.length) {
+        throw new Error(
+          `${moduleKey}: tidak ditemukan data. Impor dibatalkan agar data lama aman.`
+        );
       }
-      setImportStatus(`Impor selesai. ${completed} sheet berhasil diproses.`);
-      setNotice(`Impor workbook berhasil: ${completed} sheet diproses.`);
-      await loadOverview();
-      if (activeModule !== 'Dashboard') await loadModule(activeModule);
-    } catch (error) {
-      setImportStatus(`Impor belum selesai: ${error.message}`);
-      setNotice(`Impor gagal: ${error.message}`);
-    } finally {
-      setImportBusy(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+
+      preparedSheets.push({ moduleKey, parsed });
     }
-  };
+
+    if (!preparedSheets.length) {
+      throw new Error('Tidak ditemukan sheet yang cocok dengan modul aplikasi.');
+    }
+
+    let completed = 0;
+
+    for (const { moduleKey, parsed } of preparedSheets) {
+      setImportStatus(
+        `Mengimpor ${MODULES.find(m => m[0] === moduleKey)?.[1] || moduleKey}...`
+      );
+
+      // Semua kolom disimpan langsung, tanpa pemisahan data privat
+      const records = parsed.map(record => ({
+        module: moduleKey,
+        row_index: record.row_index,
+        data: record.data
+      }));
+
+      // Simpan data baru terlebih dahulu
+      for (let i = 0; i < records.length; i += 100) {
+        const { error } = await supabase
+          .from('app_data')
+          .upsert(records.slice(i, i + 100), {
+            onConflict: 'module,row_index'
+          });
+
+        if (error) {
+          throw new Error(`${moduleKey}: ${error.message}`);
+        }
+      }
+
+      // Setelah data baru berhasil disimpan, bersihkan baris lama
+      const { data: existingRows, error: readError } = await supabase
+        .from('app_data')
+        .select('row_index')
+        .eq('module', moduleKey);
+
+      if (readError) {
+        throw new Error(`${moduleKey}: gagal memeriksa data lama. ${readError.message}`);
+      }
+
+      const validIndexes = new Set(parsed.map(record => record.row_index));
+
+      const staleIndexes = (existingRows || [])
+        .map(row => row.row_index)
+        .filter(index => !validIndexes.has(index));
+
+      for (let i = 0; i < staleIndexes.length; i += 100) {
+        const { error } = await supabase
+          .from('app_data')
+          .delete()
+          .eq('module', moduleKey)
+          .in('row_index', staleIndexes.slice(i, i + 100));
+
+        if (error) {
+          throw new Error(`${moduleKey}: gagal membersihkan baris lama. ${error.message}`);
+        }
+      }
+
+      completed += 1;
+    }
+
+    setImportStatus(`Impor selesai. ${completed} sheet berhasil diproses.`);
+    setNotice(`Impor workbook berhasil: ${completed} sheet diproses.`);
+
+    await loadOverview();
+
+    if (activeModule !== 'Dashboard' && activeModule !== 'Settings') {
+      await loadModule(activeModule);
+    }
+
+  } catch (error) {
+    setImportStatus(`Impor belum selesai: ${error.message}`);
+    setNotice(`Impor gagal: ${error.message}`);
+  } finally {
+    setImportBusy(false);
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }
+};
 
   const openAddModal = () => {
     const columns = rows.length ? Object.keys(rows[0].data || {}) : [];
@@ -450,36 +1082,54 @@ export default function App() {
   };
   const openEditModal = (row) => setModal({ row, columns: Object.keys(row.data || {}) });
 
-  const saveRecord = async (formData) => {
-    setSaveBusy(true);
-    try {
-      const maxIndex = rows.reduce((max,r)=>Math.max(max, Number(r.row_index)||0), 0);
-      const rowIndex = modal.row?.row_index ?? maxIndex + 1;
-      let publicData = formData;
-      let privateData = null;
-      if (activeModule === 'Data_Karyawan') {
-        const split = splitEmployeeRecord(formData);
-        publicData = split.publicData;
-        privateData = split.privateData;
-      }
-      if (modal.row) {
-        const { error } = await supabase.from('app_data').update({ data: publicData, updated_at: new Date().toISOString() }).eq('id', modal.row.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from('app_data').insert({ module: activeModule, row_index: rowIndex, data: publicData });
-        if (error) throw error;
-      }
-      if (privateData && canEditPrivate && Object.keys(privateData).length) {
-        const { error } = await supabase.from('app_private_data').upsert({ module: activeModule, row_index: rowIndex, data: privateData }, { onConflict: 'module,row_index' });
-        if (error) throw error;
-      }
-      setModal(null); setNotice('Data berhasil disimpan dan disinkronkan.');
-      await loadModule(activeModule); await loadOverview();
-      return { ok: true };
-    } catch (error) {
-      return { error: error.message || 'Gagal menyimpan data.' };
-    } finally { setSaveBusy(false); }
-  };
+  
+const saveRecord = async (formData) => {
+  setSaveBusy(true);
+
+  try {
+    const maxIndex = rows.reduce(
+      (max, r) => Math.max(max, Number(r.row_index) || 0),
+      0
+    );
+
+    const rowIndex = modal.row?.row_index ?? maxIndex + 1;
+
+    if (modal.row) {
+      const { error } = await supabase
+        .from('app_data')
+        .update({
+          data: formData,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', modal.row.id);
+
+      if (error) throw error;
+    } else {
+      const { error } = await supabase
+        .from('app_data')
+        .insert({
+          module: activeModule,
+          row_index: rowIndex,
+          data: formData
+        });
+
+      if (error) throw error;
+    }
+
+    setModal(null);
+    setNotice('Data berhasil disimpan.');
+
+    await loadModule(activeModule);
+    await loadOverview();
+
+    return { ok: true };
+
+  } catch (error) {
+    return { error: error.message || 'Gagal menyimpan data.' };
+  } finally {
+    setSaveBusy(false);
+  }
+};
 
   const deleteRecord = async (row) => {
     if (!window.confirm('Hapus baris data ini? Tindakan ini tidak dapat dibatalkan.')) return;
@@ -493,18 +1143,28 @@ export default function App() {
 
   if (!isSupabaseConfigured) return <div className="setup-screen"><div className="setup-card"><div className="brand-mark">REP</div><div className="eyebrow muted">PENGATURAN AWAL</div><h1>Hubungkan database Supabase</h1><p>Salin file <code>.env.example</code> menjadi <code>.env</code>, lalu isi URL project dan anon key dari Supabase.</p><div className="setup-code">VITE_SUPABASE_URL=...<br/>VITE_SUPABASE_ANON_KEY=...</div><p className="subtle">Langkah lengkap tersedia di README.md pada paket aplikasi.</p></div></div>;
 
-  if (!session) return <Login onLogin={handleLogin} busy={authBusy} error={authError}/>;
+  if (!session) return <Login onLogin={handleLogin} busy={authBusy} error={authError} appearance={appearance}/>;
   if (!profile) return <div className="loading-screen"><div className="spinner"/>Menyiapkan akun...</div>;
 
   return <div className="app-shell">
-    <aside className="sidebar"><div className="sidebar-brand"><div className="brand-mark">REP</div><div><strong>PEOPLE & OPS</strong><span>MANAGEMENT HUB</span></div></div>
+    <aside className="sidebar"><div className="sidebar-brand">
+  <img
+  src="/logo-pt-rep.png"
+  alt="Logo PT. Ryan Eka Pratama"
+  className="brand-logo"
+/>
+  <div>
+    <strong>PT. RYAN EKA PRATAMA</strong>
+    <span>Site Bontang</span>
+  </div>
+</div>
       <div className="nav-caption">WORKSPACE</div><button className={`nav-item ${activeModule==='Dashboard'?'active':''}`} onClick={()=>setActiveModule('Dashboard')}><Icon name="grid"/><span>Dashboard</span></button>
       <div className="nav-caption menu-caption">DATA & MONITORING</div><nav className="main-nav">{allowedModules.map(([key,label,icon])=><button key={key} className={`nav-item ${activeModule===key?'active':''}`} onClick={()=>setActiveModule(key)}><Icon name={icon}/><span>{label}</span><b>›</b></button>)}</nav>
-      <div className="sidebar-bottom"><div className="database-status"><span className="pulse"/><div><strong>Database online</strong><small>Realtime connected</small></div></div><div className="user-mini"><div className="avatar">{(profile.display_name||profile.username||'U').slice(0,1).toUpperCase()}</div><div className="user-mini-text"><strong>{profile.display_name || profile.username}</strong><small>{String(profile.role || 'viewer').toUpperCase()}</small></div><button title="Keluar" onClick={logout}><Icon name="logout" size={17}/></button></div></div>
+      <div className="sidebar-bottom"><button className={`nav-item ${activeModule==='Settings'?'active':''}`} onClick={()=>setActiveModule('Settings')}><Icon name="settings"/><span>Pengaturan</span></button><div className="database-status"><span className="pulse"/><div><strong>Database online</strong><small>Realtime connected</small></div></div><div className="user-mini"><div className="avatar">{(profile.display_name||profile.username||'U').slice(0,1).toUpperCase()}</div><div className="user-mini-text"><strong>{profile.display_name || profile.username}</strong><small>{String(profile.role || 'viewer').toUpperCase()}</small></div><button title="Keluar" onClick={logout}><Icon name="logout" size={17}/></button></div></div>
     </aside>
-    <main className="main-area"><header className="topbar"><div className="breadcrumb"><span>REP PORTAL</span><b>/</b><strong>{activeModule==='Dashboard'?'Overview':MODULES.find(x=>x[0]===activeModule)?.[1] || activeModule}</strong></div><div className="topbar-right"><span className="secure-label"><Icon name="lock" size={14}/> INTERNAL</span><button className="icon-btn refresh-btn" title="Muat ulang" onClick={()=>activeModule==='Dashboard'?loadOverview():loadModule(activeModule)}><Icon name="refresh" size={17}/></button><div className="top-avatar">{(profile.display_name||'U').slice(0,1).toUpperCase()}</div></div></header>
-      {activeModule==='Dashboard' ? <DashboardHome overview={overview} loading={overviewLoading} onOpenModule={setActiveModule} isAdmin={isAdmin} onImport={openImport}/> : <DataTablePage module={activeModule} rows={rows} loading={loading} canWrite={activeCanWrite} onAdd={openAddModal} onEdit={openEditModal} onDelete={deleteRecord}/>}
-      <footer className="app-footer"><span>REP PEOPLE & OPERATIONS DASHBOARD</span><span>VERSI 1.0.0 <i/> PROTECTED WORKSPACE</span></footer>
+    <main className="main-area"><header className="topbar"><div className="breadcrumb"><span>PT. RYAN EKA PRATAMA</span><b>/</b><strong>{activeModule==='Dashboard'?'Overview':activeModule==='Settings'?'Pengaturan':MODULES.find(x=>x[0]===activeModule)?.[1] || activeModule}</strong></div><div className="topbar-right"><span className="secure-label"><Icon name="lock" size={14}/> INTERNAL</span>{activeModule!=='Settings' && <button className="icon-btn refresh-btn" title="Muat ulang" aria-label="Muat ulang" onClick={()=>activeModule==='Dashboard'?loadOverview():loadModule(activeModule)}><Icon name="refresh" size={17}/></button>}<ModeToggle appearance={appearance}/><button className={`icon-btn ${activeModule==='Settings'?'active':''}`} title="Pengaturan" aria-label="Pengaturan" onClick={()=>setActiveModule('Settings')}><Icon name="settings" size={17}/></button><div className="top-avatar">{(profile.display_name||'U').slice(0,1).toUpperCase()}</div></div></header>
+      {activeModule==='Settings' ? <SettingsPage appearance={appearance} isAdmin={isAdmin} profile={profile} onNotice={setNotice} onExportAll={exportAllData} exportBusy={exportBusy}/> : activeModule==='Dashboard' ? <DashboardHome overview={overview} loading={overviewLoading} onOpenModule={setActiveModule} isAdmin={isAdmin} onImport={openImport}/> : <DataTablePage module={activeModule} rows={rows} loading={loading} canWrite={activeCanWrite} onAdd={openAddModal} onEdit={openEditModal} onDelete={deleteRecord}/>}
+      <footer className="app-footer"><span>PT. RYAN EKA PRATAMA • SITE BONTANG</span><span>VERSI 1.1.0 <i/> PROTECTED WORKSPACE</span></footer>
     </main>
     <input ref={fileInputRef} className="hidden" type="file" accept=".xlsx,.xls" onChange={e=>importWorkbook(e.target.files?.[0])}/>
     {importBusy && <div className="modal-backdrop"><div className="progress-modal"><div className="spinner"/><strong>Memproses workbook</strong><p>{importStatus}</p><small>Jangan tutup halaman selama proses impor berlangsung.</small></div></div>}

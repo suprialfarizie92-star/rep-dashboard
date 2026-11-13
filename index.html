@@ -3,8 +3,28 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#101b2e" />
-    <title>REP | People & Operations Dashboard</title>
+    <meta name="theme-color" content="#0b2f2d" />
+    <title>PT. RYAN EKA PRATAMA | Site Bontang</title>
+    <script>
+      // Terapkan tema tersimpan sebelum halaman digambar, agar tidak berkedip.
+      (function () {
+        try {
+          var p = JSON.parse(localStorage.getItem('rep-appearance') || '{}');
+          var themes = ['teal', 'forest', 'safety', 'indigo', 'maroon', 'graphite', 'classic'];
+          var fonts = ['s', 'm', 'l', 'xl'];
+          var mode = p.mode === 'dark' || p.mode === 'auto' ? p.mode : 'light';
+          if (mode === 'auto') mode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          var d = document.documentElement;
+          d.dataset.theme = themes.indexOf(p.theme) > -1 ? p.theme : 'teal';
+          d.dataset.font = fonts.indexOf(p.font) > -1 ? p.font : 'm';
+          d.dataset.mode = mode;
+        } catch (e) {
+          document.documentElement.dataset.theme = 'teal';
+          document.documentElement.dataset.mode = 'light';
+          document.documentElement.dataset.font = 'm';
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

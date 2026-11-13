@@ -10,3 +10,12 @@ export const supabase = isSupabaseConfigured
       realtime: { params: { eventsPerSecond: 10 } }
     })
   : null;
+
+// Client sementara tanpa penyimpanan sesi. Dipakai Admin saat membuat akun baru,
+// supaya sesi login Admin yang sedang aktif tidak tertimpa oleh akun yang baru dibuat.
+export function createIsolatedClient() {
+  if (!isSupabaseConfigured) return null;
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'rep-signup-temp' }
+  });
+}
