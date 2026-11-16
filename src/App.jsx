@@ -14,6 +14,7 @@ import { NAV, TAB_LABEL } from './nav.js';
 import { licenseExpiringPeople } from './utils.js';
 import InputData from './InputData.jsx';
 import { PAGES } from './Pages.jsx';
+import KandidatForm, { REK, splitRek } from './KandidatForm.jsx';
 
 const PRIVATE_EMPLOYEE_FIELDS = new Set([
   'tempat lahir', 'tanggal lahir', 'jenis kelamin', 'status', 'agama', 'pendidikan',
@@ -81,7 +82,7 @@ function makeHeaders(rows, moduleKey) {
   // Header khusus Data Rekrutmen
 if (moduleKey === 'Data_Rekrutmen') {
   return [
-    'ID',
+    'NIK',
     'Nama Kandidat',
     'Jabatan Dilamar',
     'Sumber',
@@ -740,6 +741,7 @@ function AppUtama() {
   const [loading, setLoading] = useState(false);
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [modal, setModal] = useState(null);
+  const [kandidat, setKandidat] = useState(null);
   const [saveBusy, setSaveBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const [importBusy, setImportBusy] = useState(false);
@@ -870,7 +872,7 @@ const exportAllData = async (selectedModules = []) => {
     let from = 0;
     let failed = false;
     for (;;) {
-      const { data, error } = await supabase.from('app_data').select('module,data').order('id', { ascending: true }).range(from, from + 999);
+      const { data, error } = await supabase.from('app_data').select('module,row_index,data').order('id', { ascending: true }).range(from, from + 999);
       if (error) { failed = true; break; }
       all = all.concat(data || []);
       if (!data || data.length < 1000) break;
@@ -899,9 +901,22 @@ const loadModule = useCallback(async (moduleKey) => {
     return;
   }
 
-  setRows(data || []);
+  let out = data || [];
+  if (moduleKey === REK && out.length) {
+    let map = {};
+    if (canEditPrivate) {
+      const pv = await supabase.from('app_private_data').select('row_index,data').eq('module', REK).range(0, 4999);
+      (pv.data || []).forEach(r => { map[r.row_index] = r.data || {}; });
+    }
+    out = out.map(r => {
+      const d = { ...(r.data || {}) };
+      Object.keys(d).forEach(k => { if (k.trim().toLowerCase() === 'id') delete d[k]; });
+      return { ...r, data: canEditPrivate ? { NIK: '', 'No. HP': '', ...d, ...(map[r.row_index] || {}) } : d };
+    });
+  }
+  setRows(out);
   setLoading(false);
-}, [session]);
+}, [session, canEditPrivate]);
 
 
   useEffect(() => {
@@ -988,10 +1003,11 @@ const importWorkbook = async (file) => {
       );
 
       // Semua kolom disimpan langsung, tanpa pemisahan data privat
+      const isRek = moduleKey === REK;
       const records = parsed.map(record => ({
         module: moduleKey,
         row_index: record.row_index,
-        data: record.data
+        data: isRek ? splitRek(record.data).pub : record.data
       }));
 
       // Simpan data baru terlebih dahulu
@@ -1004,6 +1020,17 @@ const importWorkbook = async (file) => {
 
         if (error) {
           throw new Error(`${moduleKey}: ${error.message}`);
+        }
+      }
+
+      // Rekrutmen: NIK dan No. HP dari Excel disimpan ke tabel privat (hanya baris yang berisi nilai)
+      if (isRek) {
+        const privRows = parsed.map(record => ({ module: moduleKey, row_index: record.row_index, data: splitRek(record.data).priv, updated_at: new Date().toISOString() }))
+          .map(r => ({ ...r, data: Object.fromEntries(Object.entries(r.data).filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== '')) }))
+          .filter(r => Object.keys(r.data).length);
+        for (let i = 0; i < privRows.length; i += 100) {
+          const { error } = await supabase.from('app_private_data').upsert(privRows.slice(i, i + 100), { onConflict: 'module,row_index' });
+          if (error) throw new Error(`${moduleKey}: gagal menyimpan NIK/No. HP. ${error.message}`);
         }
       }
 
@@ -1035,6 +1062,8 @@ const importWorkbook = async (file) => {
         }
       }
 
+      if (isRek && staleIndexes.length) await supabase.from('app_private_data').delete().eq('module', moduleKey).in('row_index', staleIndexes);
+
       completed += 1;
     }
 
@@ -1060,11 +1089,13 @@ const importWorkbook = async (file) => {
 };
 
   const openAddModal = () => {
+    if (activeModule === REK) { setKandidat({ rowIndex: null }); return; }
     if (activeModule === 'Data_Karyawan') { setInputRow(null); openModule('Input', null, 'input'); return; }
     const columns = rows.length ? Object.keys(rows[0].data || {}) : [];
     setModal({ row: null, columns });
   };
   const openEditModal = (row) => {
+    if (activeModule === REK) { setKandidat({ rowIndex: row.row_index }); return; }
     if (activeModule === 'Data_Karyawan') { setInputRow(row); openModule('Input', null, 'input'); return; }
     setModal({ row, columns: Object.keys(row.data || {}) });
   };
@@ -1123,7 +1154,7 @@ const saveRecord = async (formData) => {
     const { error } = await supabase.from('app_data').delete().eq('id', row.id);
     if (error) setNotice(`Gagal menghapus: ${error.message}`);
     else {
-      if (activeModule === 'Data_Karyawan') await supabase.from('app_private_data').delete().eq('module', activeModule).eq('row_index', row.row_index);
+      if (activeModule === 'Data_Karyawan' || activeModule === REK) await supabase.from('app_private_data').delete().eq('module', activeModule).eq('row_index', row.row_index);
       setNotice('Data berhasil dihapus.'); await loadModule(activeModule); await loadOverview();
     }
   };
@@ -1153,12 +1184,13 @@ const saveRecord = async (formData) => {
     </aside>
     <main className="main-area"><header className="topbar"><div className="breadcrumb"><span>PT. RYAN EKA PRATAMA</span><b>/</b><strong>{activeModule==='Settings'?'Pengaturan':curNav?.label || activeModule}</strong></div><div className="topbar-right"><span className="secure-label"><Icon name="lock" size={14}/> INTERNAL</span>{activeModule!=='Settings' && <button className="icon-btn refresh-btn" title="Muat ulang" aria-label="Muat ulang" onClick={()=>['Dashboard','Training','Lisensi'].includes(activeModule)?loadOverview():loadModule(activeModule)}><Icon name="refresh" size={17}/></button>}<ModeToggle appearance={appearance}/><button className={`icon-btn ${activeModule==='Settings'?'active':''}`} title="Pengaturan" aria-label="Pengaturan" onClick={()=>setActiveModule('Settings')}><Icon name="settings" size={17}/></button><div className="top-avatar">{(profile.display_name||'U').slice(0,1).toUpperCase()}</div></div></header>
       {activeModule!=='Settings' && curNav?.modules.length>1 && !(PAGES[activeModule] && !moduleFilter?.raw) && <div className="module-tabs" role="tablist">{curNav.modules.filter(k=>k==='Training'||isAdmin||permissions.some(p=>p.module_key===k&&p.can_read)).map(k=><button key={k} type="button" role="tab" aria-selected={activeModule===k} className={`module-tab ${activeModule===k?'active':''}`} onClick={()=>openModule(k,null,curNav.id)}>{TAB_LABEL[k]||MODULES.find(m=>m[0]===k)?.[1]||k}</button>)}</div>}
-      {activeModule==='Input' ? <InputData key={inputRow?.id||'new'} canPrivate={canEditPrivate} isAdmin={isAdmin} initialRow={inputRow} split={splitEmployeeRecord} toDate={excelSerialToDate} onImport={openImport} onSaved={loadOverview}/> : activeModule==='Settings' ? <SettingsPage appearance={appearance} isAdmin={isAdmin} profile={profile} onNotice={setNotice} onExportAll={exportAllData} exportBusy={exportBusy}/> : activeModule==='Tes' ? <TesHR data={overviewData}/> : activeModule==='Lisensi' ? <Lisensi data={overviewData} loading={overviewLoading} canWrite={isAdmin||permissions.some(p=>p.module_key==='Data_Karyawan'&&p.can_write)} preset={moduleFilter} onRefresh={loadOverview} onOpen={openModule}/> : activeModule==='Training' ? <Training data={overviewData} loading={overviewLoading} onRefresh={loadOverview} onOpen={openModule}/> : activeModule==='Dashboard' ? <Dashboard data={overviewData} loading={overviewLoading} hasData={overviewData.length>0} isAdmin={isAdmin} onImport={openImport} onRefresh={loadOverview} onOpen={openModule}/> : (PAGES[activeModule] && !moduleFilter?.raw) ? React.createElement(PAGES[activeModule], { data: overviewData, loading: overviewLoading, onRefresh: loadOverview, onOpen: openModule, onInput: () => { setInputRow(null); openModule('Input', null, 'input'); } }) : <DataTablePage module={activeModule} rows={rows} loading={loading} canWrite={activeCanWrite} onAdd={openAddModal} onEdit={openEditModal} onDelete={deleteRecord} preset={moduleFilter} onClearPreset={()=>setModuleFilter(null)}/>}
+      {activeModule==='Input' ? <InputData key={inputRow?.id||'new'} canPrivate={canEditPrivate} isAdmin={isAdmin} initialRow={inputRow} split={splitEmployeeRecord} toDate={excelSerialToDate} onImport={openImport} onSaved={loadOverview}/> : activeModule==='Settings' ? <SettingsPage appearance={appearance} isAdmin={isAdmin} profile={profile} onNotice={setNotice} onExportAll={exportAllData} exportBusy={exportBusy}/> : activeModule==='Tes' ? <TesHR data={overviewData} onChanged={loadOverview}/> : activeModule==='Lisensi' ? <Lisensi data={overviewData} loading={overviewLoading} canWrite={isAdmin||permissions.some(p=>p.module_key==='Data_Karyawan'&&p.can_write)} preset={moduleFilter} onRefresh={loadOverview} onOpen={openModule}/> : activeModule==='Training' ? <Training data={overviewData} loading={overviewLoading} onRefresh={loadOverview} onOpen={openModule}/> : activeModule==='Dashboard' ? <Dashboard data={overviewData} loading={overviewLoading} hasData={overviewData.length>0} isAdmin={isAdmin} onImport={openImport} onRefresh={loadOverview} onOpen={openModule}/> : (PAGES[activeModule] && !moduleFilter?.raw) ? React.createElement(PAGES[activeModule], { data: overviewData, loading: overviewLoading, onRefresh: loadOverview, onOpen: openModule, onInput: () => { setInputRow(null); openModule('Input', null, 'input'); }, canPrivate: canEditPrivate, canWrite: isAdmin || permissions.some(p => p.module_key === REK && p.can_write), onAddKandidat: () => setKandidat({ rowIndex: null }), onEditKandidat: ri => setKandidat({ rowIndex: ri }) }) : <DataTablePage module={activeModule} rows={rows} loading={loading} canWrite={activeCanWrite} onAdd={openAddModal} onEdit={openEditModal} onDelete={deleteRecord} preset={moduleFilter} onClearPreset={()=>setModuleFilter(null)}/>}
       <footer className="app-footer"><span>PT. RYAN EKA PRATAMA • SITE BONTANG</span><span>VERSI 1.1.0 <i/> PROTECTED WORKSPACE</span></footer>
     </main>
     <input ref={fileInputRef} className="hidden" type="file" accept=".xlsx,.xls" onChange={e=>importWorkbook(e.target.files?.[0])}/>
     {importBusy && <div className="modal-backdrop"><div className="progress-modal"><div className="spinner"/><strong>Memproses workbook</strong><p>{importStatus}</p><small>Jangan tutup halaman selama proses impor berlangsung.</small></div></div>}
     {importStatus && !importBusy && <div className="import-status"><div><strong>Status impor</strong><span>{importStatus}</span></div><button onClick={()=>setImportStatus('')}><Icon name="close" size={15}/></button></div>}
+    {kandidat && <KandidatForm key={kandidat.rowIndex ?? 'baru'} rowIndex={kandidat.rowIndex} data={overviewData} canPrivate={canEditPrivate} onClose={()=>setKandidat(null)} onSaved={async()=>{ await loadOverview(); if (activeModule === REK) await loadModule(REK); }}/>}
     {modal && <RecordModal module={activeModule} row={modal.row} columns={modal.columns} canEditPrivate={canEditPrivate} onClose={()=>setModal(null)} onSave={saveRecord} busy={saveBusy}/>}
     {notice && <div className="toast"><span>{notice}</span><button onClick={()=>setNotice('')}><Icon name="close" size={14}/></button></div>}
   </div>;

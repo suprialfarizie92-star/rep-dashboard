@@ -1,5 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Icon from './Icon.jsx';
+import { supabase } from './supabase';
+import { getKey, digits } from './KandidatForm.jsx';
 import { DAY, avg, daysLeft, fmt, isLicense, norm, num, toDate, today, val, yearOf } from './utils.js';
 import './dashboard.css';
 import './pages.css';
@@ -347,10 +349,22 @@ const TAHAP_COLS = ['tahapsaatini', 'tahapseleksi', 'tahap'];
 const nk = s => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
 const filled = v => v !== undefined && v !== null && String(v).trim() !== '';
 
-function RekrutmenPage({ data, loading, onRefresh, onOpen }) {
+function RekrutmenPage({ data, loading, onRefresh, onOpen, canPrivate, canWrite, onAddKandidat, onEditKandidat }) {
   const [tab, setTab] = useState('semua'); const [q, setQ] = useState('');
+  // NIK lengkap hanya dimuat untuk admin/HR (database menolak role lain)
+  const [priv, setPriv] = useState({});
+  useEffect(() => {
+    if (!canPrivate) { setPriv({}); return undefined; }
+    let live = true;
+    supabase.from('app_private_data').select('row_index,data').eq('module', 'Data_Rekrutmen').range(0, 4999).then(({ data: d, error }) => {
+      if (!live || error) return;
+      const m = {}; (d || []).forEach(r => { m[r.row_index] = r.data || {}; }); setPriv(m);
+    });
+    return () => { live = false; };
+  }, [canPrivate, data]);
   const R = useMemo(() => {
-    const rec = rowsOf(data, 'Data_Rekrutmen');
+    const recRows = data.filter(x => x.module === 'Data_Rekrutmen');
+    const rec = recRows.map(x => x.data || {});
     const keys = [...new Set(rec.flatMap(Object.keys))];
     const wideStages = STAGES.map(s => ({ s, key: keys.find(k => nk(k) === nk(s)) })).filter(x => x.key);
     // Format Excel saat ini: satu kolom "Tahap Saat Ini". Dipakai kalau tidak ada kolom per tahap.
@@ -362,7 +376,7 @@ function RekrutmenPage({ data, loading, onRefresh, onOpen }) {
     const rows = rec.map((r, i) => {
       const hasil = String(val(r, 'Hasil Akhir') ?? '');
       const last = tahapKey ? null : [...stages].reverse().find(x => filled(r[x.key]));
-      return { k: i, r, nama: pick(r, /^nama/i), jab: pick(r, /^(jabatan|posisi|position)/i), sumber: pick(r, /sumber/i), alasan: pick(r, /alasan|reason/i), hasil, done: DONE.test(hasil), no: NO.test(hasil), tth: num(val(r, 'Time to Hire (Hari)')), tahap: tahapKey ? (filled(r[tahapKey]) ? String(r[tahapKey]) : '—') : last ? last.s : '—' };
+      return { k: i, ri: recRows[i]?.row_index, r, nama: pick(r, /^nama/i), jab: pick(r, /^(jabatan|posisi|position)/i), sumber: pick(r, /sumber/i), alasan: pick(r, /alasan|reason/i), hasil, done: DONE.test(hasil), no: NO.test(hasil), tth: num(val(r, 'Time to Hire (Hari)')), tahap: tahapKey ? (filled(r[tahapKey]) ? String(r[tahapKey]) : '—') : last ? last.s : '—' };
     });
     const sc = name => {
       if (tahapKey) { const i = STAGES.findIndex(s => nk(s) === nk(name)); return i < 0 ? null : rec.filter(r => idxOf(r) >= i).length; }
@@ -383,9 +397,12 @@ function RekrutmenPage({ data, loading, onRefresh, onOpen }) {
   const { rows, stages, sc, needs } = R;
   const offers = sc('Offering Letter'); const diterima = rows.filter(x => x.done).length;
   const needle = norm(q);
-  const list = rows.filter(x => (tab === 'semua' || (tab === 'proses' ? R.proses(x) : tab === 'diterima' ? x.done : x.no)) && (!needle || hay(x.nama, x.jab, x.sumber).includes(needle)));
+  const nikOf = x => (canPrivate ? digits(getKey(priv[x.ri] || {}, 'NIK')) : '');
+  const tanpaNik = rows.filter(x => canPrivate && !nikOf(x)).length;
+  const inTab = x => (tab === 'semua' || (tab === 'proses' ? R.proses(x) : tab === 'diterima' ? x.done : tab === 'nik' ? !nikOf(x) : x.no));
+  const list = rows.filter(x => inTab(x) && (!needle || hay(x.nama, x.jab, x.sumber, nikOf(x)).includes(needle)));
   return <Wrap loading={loading} data={data}>
-    <Head title="Rekrutmen" sub="Kebutuhan jabatan yang masih kurang, kandidat pelamar, tahap seleksi, sumber, dan time to hire. Klik baris kandidat untuk memperbarui."><Refresh onRefresh={onRefresh} /></Head>
+    <Head title="Rekrutmen" sub="Kebutuhan jabatan yang masih kurang, kandidat pelamar, tahap seleksi, sumber, dan time to hire. Klik baris kandidat untuk memperbarui.">{canWrite && onAddKandidat && <button type="button" className="btn primary" onClick={onAddKandidat}><Icon name="plus" size={15} /> Tambah kandidat</button>}<Refresh onRefresh={onRefresh} /></Head>
     <Cards items={[{ v: fmt(needs.length, 0), l: 'Jabatan perlu diisi', t: 'red' }, { v: fmt(needs.reduce((s, n) => s + n.kurang, 0), 0), l: 'Total kebutuhan orang', t: 'amber' }, { v: fmt(rows.length, 0), l: 'Total kandidat', t: 'blue', go: () => setTab('semua'), on: tab === 'semua' },
       { v: fmt(rows.filter(R.proses).length, 0), l: 'Sedang diproses', t: 'teal', go: () => setTab('proses'), on: tab === 'proses' }, { v: sc('Medical Check Up') === null ? '—' : fmt(sc('Medical Check Up'), 0), l: 'Lolos Medical Check Up ke atas', t: 'violet' },
       { v: fmt(diterima, 0), l: 'Diterima', t: 'green', go: () => setTab('diterima'), on: tab === 'diterima' }, { v: fmt(rows.filter(x => x.no).length, 0), l: 'Ditolak', t: 'red', go: () => setTab('ditolak'), on: tab === 'ditolak' },
@@ -407,8 +424,8 @@ function RekrutmenPage({ data, loading, onRefresh, onOpen }) {
       <Tbl limit0={10} rows={R.tth} cols={[{ h: 'Jabatan', r: x => x.jab }, { h: 'Diterima', num: 1, r: x => x.n }, { h: 'Rata-rata (hari)', num: 1, r: x => fmt(x.avg, 1) }, { h: 'Tercepat', num: 1, r: x => x.min }, { h: 'Terlama', num: 1, r: x => x.max }]} />
     </Panel>
     <Panel title="Daftar kandidat" sub="Klik baris untuk mengubah hasil, tahap, atau tanggal.">
-      <Bar q={q} setQ={setQ} ph="Cari nama, jabatan, sumber" tab={tab} setTab={setTab} tabs={[['semua', 'Semua'], ['proses', 'Proses'], ['diterima', 'Diterima'], ['ditolak', 'Ditolak']]} total={`${list.length} kandidat`} />
-      <Tbl rows={list} onRow={x => onOpen('Data_Rekrutmen', RAW('rekrutmen', r => norm(pick(r, /^nama/i)) === norm(x.nama), `Kandidat • ${x.nama}`))} cols={[{ h: 'Nama', r: x => <strong>{x.nama || '—'}</strong> }, { h: 'Jabatan', r: x => x.jab || '—' }, { h: 'Sumber', r: x => x.sumber || '—' },
+      <Bar q={q} setQ={setQ} ph={canPrivate ? 'Cari nama, NIK, jabatan, sumber' : 'Cari nama, jabatan, sumber'} tab={tab} setTab={setTab} tabs={[['semua', 'Semua'], ['proses', 'Proses'], ['diterima', 'Diterima'], ['ditolak', 'Ditolak'], ...(canPrivate ? [['nik', `NIK belum lengkap (${tanpaNik})`]] : [])]} total={`${list.length} kandidat`} />
+      <Tbl rows={list} onRow={x => (canWrite && onEditKandidat && x.ri ? onEditKandidat(x.ri) : onOpen('Data_Rekrutmen', RAW('rekrutmen', r => norm(pick(r, /^nama/i)) === norm(x.nama), `Kandidat • ${x.nama}`)))} cols={[{ h: 'Nama', r: x => <strong>{x.nama || '—'}</strong> }, ...(canPrivate ? [{ h: 'NIK', r: x => nikOf(x) || <Bdg tone="amber" text="NIK belum lengkap" /> }] : []), { h: 'Jabatan', r: x => x.jab || '—' }, { h: 'Sumber', r: x => x.sumber || '—' },
         { h: 'Tahap terakhir', r: x => x.tahap }, { h: 'Hasil akhir', r: x => <Bdg tone={x.done ? 'green' : x.no ? 'red' : 'amber'} text={x.hasil || 'Proses'} /> }, { h: 'Time to hire', num: 1, r: x => (x.tth === null ? '—' : `${fmt(x.tth, 0)} hari`) }]} />
     </Panel>
   </Wrap>;

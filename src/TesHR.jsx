@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx';
 import Icon from './Icon.jsx';
 import { supabase } from './supabase';
 import { norm } from './utils.js';
+import { buatKandidatDariTes, getKey } from './KandidatForm.jsx';
 import './dashboard.css';
 import './tes.css';
 
@@ -27,7 +28,7 @@ async function ok(promise) {
   return data;
 }
 
-export default function TesHR({ data = [] }) {
+export default function TesHR({ data = [], onChanged }) {
   const [tab, setTab] = useState('sesi');
   const [paket, setPaket] = useState([]);
   const [sesi, setSesi] = useState([]);
@@ -79,7 +80,7 @@ export default function TesHR({ data = [] }) {
 
       {loading && !sesi.length && !soal.length
         ? <div className="loading-state"><div className="spinner" />Memuat data...</div>
-        : tab === 'sesi' ? <SesiTab paket={paket} sesi={sesi} soal={soal} data={data} aktif={aktif} setAktif={setAktif} muat={muat} notify={notify} />
+        : tab === 'sesi' ? <SesiTab paket={paket} sesi={sesi} soal={soal} data={data} aktif={aktif} setAktif={setAktif} muat={muat} notify={notify} onChanged={onChanged} />
           : tab === 'soal' ? <SoalTab soal={soal} muat={muat} notify={notify} />
             : <PaketTab paket={paket} soal={soal} muat={muat} notify={notify} />}
     </div>
@@ -87,7 +88,7 @@ export default function TesHR({ data = [] }) {
 }
 
 /* ====================== SESI ====================== */
-function SesiTab({ paket, sesi, soal, data, aktif, setAktif, muat, notify }) {
+function SesiTab({ paket, sesi, soal, data, aktif, setAktif, muat, notify, onChanged }) {
   const [paketId, setPaketId] = useState('');
   const [judul, setJudul] = useState('');
   const [busy, setBusy] = useState(false);
@@ -106,7 +107,7 @@ function SesiTab({ paket, sesi, soal, data, aktif, setAktif, muat, notify }) {
   };
 
   const cur = sesi.find(s => s.id === aktif);
-  if (cur) return <SesiDetail key={cur.id} s={cur} paket={paket} soal={soal} data={data} muat={muat} notify={notify} kembali={() => setAktif('')} />;
+  if (cur) return <SesiDetail key={cur.id} s={cur} paket={paket} soal={soal} data={data} muat={muat} notify={notify} onChanged={onChanged} kembali={() => setAktif('')} />;
 
   return (
     <section className="panel tr-panel">
@@ -139,7 +140,7 @@ async function semuaJawaban(ids) {
   return out;
 }
 
-function SesiDetail({ s, paket, soal, data, muat, notify, kembali }) {
+function SesiDetail({ s, paket, soal, data, muat, notify, kembali, onChanged }) {
   const pk = paket.find(p => p.id === s.paket_id);
   const url = `${window.location.origin}/tes?kode=${s.kode}`;
   const ditutup = s.status === 'ditutup';
@@ -149,7 +150,28 @@ function SesiDetail({ s, paket, soal, data, muat, notify, kembali }) {
   const [jawaban, setJawaban] = useState([]);
   const [teks, setTeks] = useState('');
   const [rek, setRek] = useState('');
+  const [jabTes, setJabTes] = useState('');
+  const [priv, setPriv] = useState({});
   const [busy, setBusy] = useState(false);
+
+  // No. HP lengkap kandidat disimpan di tabel privat (halaman ini hanya untuk admin/HR)
+  const muatPriv = useCallback(async () => {
+    const { data: d, error } = await supabase.from('app_private_data').select('row_index,data').eq('module', 'Data_Rekrutmen').range(0, 4999);
+    if (error) return {};
+    const m = {}; (d || []).forEach(r => { m[r.row_index] = r.data || {}; });
+    setPriv(m);
+    return m;
+  }, []);
+  useEffect(() => { muatPriv(); }, [muatPriv, data]);
+  const jabList = useMemo(() => {
+    const out = new Set();
+    data.forEach(x => {
+      if (x.module !== 'Data_Kebutuhan' && x.module !== 'Data_Rekrutmen') return;
+      const d = x.data || {}; const k = Object.keys(d).find(y => /^(jabatan|posisi)/i.test(y));
+      const v = k ? String(d[k] ?? '').trim() : ''; if (v) out.add(v);
+    });
+    return [...out].sort((a, b) => a.localeCompare(b, 'id'));
+  }, [data]);
 
   useEffect(() => {
     let on = true;
@@ -198,9 +220,9 @@ function SesiDetail({ s, paket, soal, data, muat, notify, kembali }) {
 
   const kandidat = useMemo(() => {
     const seen = new Set();
-    return data.filter(x => x.module === 'Data_Rekrutmen').map(x => x.data || {}).map(r => ({
+    return data.filter(x => x.module === 'Data_Rekrutmen').map(x => ({ r: x.data || {}, p: priv[x.row_index] || {} })).map(({ r, p }) => ({
       nama: String(pick(r, /^nama/i) ?? '').trim(),
-      hp: digits(pick(r, /hp|telp|telepon|phone/i)),
+      hp: digits(getKey(p, 'No. HP') ?? pick(r, /hp|telp|telepon|phone/i)),
       jabatan: String(pick(r, /^(jabatan|posisi)/i) ?? '').trim(),
       hasil: norm(pick(r, /hasil akhir/i))
     })).filter(k => {
@@ -208,19 +230,27 @@ function SesiDetail({ s, paket, soal, data, muat, notify, kembali }) {
       if (!k.nama || k.hp.length < 4 || ['ditolak', 'diterima'].includes(k.hasil) || seen.has(key)) return false;
       seen.add(key); return true;
     }).sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
-  }, [data]);
+  }, [data, priv]);
 
   const tambah = () => aksi(async () => {
-    const rows = []; const salah = [];
+    const rows = []; const salah = []; const lengkap = [];
     teks.split('\n').map(x => x.trim()).filter(Boolean).forEach(b => {
       const parts = b.split(/[;\t|,]/);
       const nama = (parts[0] || '').trim(); const hp = digits(parts.slice(1).join(''));
-      if (nama && hp.length >= 4) rows.push({ sesi_id: s.id, nama, hp4: hp.slice(-4) }); else salah.push(b);
+      if (nama && hp.length >= 4) { rows.push({ sesi_id: s.id, nama, hp4: hp.slice(-4) }); lengkap.push({ nama, hp }); } else salah.push(b);
     });
     if (salah.length) throw new Error(`Baris tidak valid (butuh nama dan nomor HP, dipisah titik koma): ${salah.slice(0, 3).join(' | ')}`);
     if (!rows.length) throw new Error('Isi minimal satu baris: Nama; Nomor HP.');
     await ok(supabase.from('tes_peserta').insert(rows));
     setTeks(''); await muatPeserta();
+    // Peserta yang belum ada di Rekrutmen otomatis dibuat sebagai kandidat (dicocokkan lewat No. HP lengkap)
+    const ada = await muatPriv();
+    const hpAda = new Set(Object.values(ada).map(p => digits(getKey(p, 'No. HP'))).filter(Boolean));
+    const baru = lengkap.filter((k, i) => !hpAda.has(k.hp) && lengkap.findIndex(z => z.hp === k.hp) === i);
+    try {
+      for (const k of baru) await buatKandidatDariTes({ nama: k.nama, hp: k.hp, jabatan: jabTes });
+    } catch (e) { throw new Error(`Peserta sudah masuk sesi, tetapi gagal membuat kandidat di Rekrutmen: ${e.message}`); }
+    finally { if (baru.length) onChanged?.(); }
   }, `Peserta ditambahkan.`);
 
   const tambahWaktu = p => {
@@ -309,6 +339,10 @@ function SesiDetail({ s, paket, soal, data, muat, notify, kembali }) {
                   </select>
                 </label>
               )}
+              <label>Jabatan untuk kandidat baru di Rekrutmen (bila peserta belum terdaftar)
+                <input value={jabTes} list="tes-jabatan" placeholder="Ketik untuk mencari jabatan" onChange={e => setJabTes(e.target.value)} />
+                <datalist id="tes-jabatan">{jabList.map(j => <option key={j} value={j} />)}</datalist>
+              </label>
               <label>Daftar peserta<textarea value={teks} onChange={e => setTeks(e.target.value)} placeholder={'Budi Santoso; 081234567890\nAndi Wijaya; 085212345678'} /></label>
               <div><button type="button" className="btn primary" disabled={busy || !teks.trim()} onClick={tambah}>Tambahkan peserta</button></div>
             </div>
