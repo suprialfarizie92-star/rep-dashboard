@@ -8,6 +8,8 @@ import SettingsPage from './Settings.jsx';
 import Dashboard from './Dashboard.jsx';
 import Training from './Training.jsx';
 import Lisensi from './Lisensi.jsx';
+import TesHR from './TesHR.jsx';
+import TesKandidat from './TesKandidat.jsx';
 import { NAV, TAB_LABEL } from './nav.js';
 import { licenseExpiringPeople } from './utils.js';
 import InputData from './InputData.jsx';
@@ -717,7 +719,7 @@ function RecordModal({ module, row, columns, canEditPrivate, onClose, onSave, bu
   })}</div>{error && <div className="form-error">{error}</div>}<div className="modal-actions"><button type="button" className="btn light" onClick={onClose}>Batal</button><button type="submit" className="btn primary" disabled={busy}>{busy ? 'Menyimpan...' : 'Simpan perubahan'}</button></div></form></div>;
 }
 
-export default function App() {
+function AppUtama() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [permissions, setPermissions] = useState([]);
@@ -749,7 +751,7 @@ export default function App() {
   const isAdmin = profile?.role === 'admin';
   const canEditPrivate = ['admin','hr'].includes(profile?.role);
   const allowedModules = useMemo(() => isAdmin ? MODULES : MODULES.filter(m => permissions.some(p=>p.module_key===m[0] && p.can_read)), [isAdmin, permissions]);
-  const canSee = item => item.id === 'dashboard' || (item.id === 'input' ? (isAdmin || permissions.some(p => p.module_key === 'Data_Karyawan' && p.can_write)) : isAdmin || (item.perms || item.modules).some(k => permissions.some(p => p.module_key === k && p.can_read)));
+  const canSee = item => item.id === 'dashboard' || (item.id === 'tes' ? canEditPrivate : item.id === 'input' ? (isAdmin || permissions.some(p => p.module_key === 'Data_Karyawan' && p.can_write)) : isAdmin || (item.perms || item.modules).some(k => permissions.some(p => p.module_key === k && p.can_read)));
   const visibleNav = NAV.filter(canSee);
   const lisensiBadge = useMemo(() => licenseExpiringPeople(overviewData, 30), [overviewData]);
   const curNav = NAV.find(n => n.id === activeNav);
@@ -880,7 +882,7 @@ const exportAllData = async (selectedModules = []) => {
 
   
 const loadModule = useCallback(async (moduleKey) => {
-  if (!session?.user || moduleKey === 'Dashboard' || moduleKey === 'Settings' || moduleKey === 'Training' || moduleKey === 'Lisensi' || moduleKey === 'Input') return;
+  if (!session?.user || moduleKey === 'Dashboard' || moduleKey === 'Settings' || moduleKey === 'Training' || moduleKey === 'Lisensi' || moduleKey === 'Tes' || moduleKey === 'Input') return;
 
   setLoading(true);
 
@@ -1151,7 +1153,7 @@ const saveRecord = async (formData) => {
     </aside>
     <main className="main-area"><header className="topbar"><div className="breadcrumb"><span>PT. RYAN EKA PRATAMA</span><b>/</b><strong>{activeModule==='Settings'?'Pengaturan':curNav?.label || activeModule}</strong></div><div className="topbar-right"><span className="secure-label"><Icon name="lock" size={14}/> INTERNAL</span>{activeModule!=='Settings' && <button className="icon-btn refresh-btn" title="Muat ulang" aria-label="Muat ulang" onClick={()=>['Dashboard','Training','Lisensi'].includes(activeModule)?loadOverview():loadModule(activeModule)}><Icon name="refresh" size={17}/></button>}<ModeToggle appearance={appearance}/><button className={`icon-btn ${activeModule==='Settings'?'active':''}`} title="Pengaturan" aria-label="Pengaturan" onClick={()=>setActiveModule('Settings')}><Icon name="settings" size={17}/></button><div className="top-avatar">{(profile.display_name||'U').slice(0,1).toUpperCase()}</div></div></header>
       {activeModule!=='Settings' && curNav?.modules.length>1 && !(PAGES[activeModule] && !moduleFilter?.raw) && <div className="module-tabs" role="tablist">{curNav.modules.filter(k=>k==='Training'||isAdmin||permissions.some(p=>p.module_key===k&&p.can_read)).map(k=><button key={k} type="button" role="tab" aria-selected={activeModule===k} className={`module-tab ${activeModule===k?'active':''}`} onClick={()=>openModule(k,null,curNav.id)}>{TAB_LABEL[k]||MODULES.find(m=>m[0]===k)?.[1]||k}</button>)}</div>}
-      {activeModule==='Input' ? <InputData key={inputRow?.id||'new'} canPrivate={canEditPrivate} isAdmin={isAdmin} initialRow={inputRow} split={splitEmployeeRecord} toDate={excelSerialToDate} onImport={openImport} onSaved={loadOverview}/> : activeModule==='Settings' ? <SettingsPage appearance={appearance} isAdmin={isAdmin} profile={profile} onNotice={setNotice} onExportAll={exportAllData} exportBusy={exportBusy}/> : activeModule==='Lisensi' ? <Lisensi data={overviewData} loading={overviewLoading} canWrite={isAdmin||permissions.some(p=>p.module_key==='Data_Karyawan'&&p.can_write)} preset={moduleFilter} onRefresh={loadOverview} onOpen={openModule}/> : activeModule==='Training' ? <Training data={overviewData} loading={overviewLoading} onRefresh={loadOverview} onOpen={openModule}/> : activeModule==='Dashboard' ? <Dashboard data={overviewData} loading={overviewLoading} hasData={overviewData.length>0} isAdmin={isAdmin} onImport={openImport} onRefresh={loadOverview} onOpen={openModule}/> : (PAGES[activeModule] && !moduleFilter?.raw) ? React.createElement(PAGES[activeModule], { data: overviewData, loading: overviewLoading, onRefresh: loadOverview, onOpen: openModule, onInput: () => { setInputRow(null); openModule('Input', null, 'input'); } }) : <DataTablePage module={activeModule} rows={rows} loading={loading} canWrite={activeCanWrite} onAdd={openAddModal} onEdit={openEditModal} onDelete={deleteRecord} preset={moduleFilter} onClearPreset={()=>setModuleFilter(null)}/>}
+      {activeModule==='Input' ? <InputData key={inputRow?.id||'new'} canPrivate={canEditPrivate} isAdmin={isAdmin} initialRow={inputRow} split={splitEmployeeRecord} toDate={excelSerialToDate} onImport={openImport} onSaved={loadOverview}/> : activeModule==='Settings' ? <SettingsPage appearance={appearance} isAdmin={isAdmin} profile={profile} onNotice={setNotice} onExportAll={exportAllData} exportBusy={exportBusy}/> : activeModule==='Tes' ? <TesHR data={overviewData}/> : activeModule==='Lisensi' ? <Lisensi data={overviewData} loading={overviewLoading} canWrite={isAdmin||permissions.some(p=>p.module_key==='Data_Karyawan'&&p.can_write)} preset={moduleFilter} onRefresh={loadOverview} onOpen={openModule}/> : activeModule==='Training' ? <Training data={overviewData} loading={overviewLoading} onRefresh={loadOverview} onOpen={openModule}/> : activeModule==='Dashboard' ? <Dashboard data={overviewData} loading={overviewLoading} hasData={overviewData.length>0} isAdmin={isAdmin} onImport={openImport} onRefresh={loadOverview} onOpen={openModule}/> : (PAGES[activeModule] && !moduleFilter?.raw) ? React.createElement(PAGES[activeModule], { data: overviewData, loading: overviewLoading, onRefresh: loadOverview, onOpen: openModule, onInput: () => { setInputRow(null); openModule('Input', null, 'input'); } }) : <DataTablePage module={activeModule} rows={rows} loading={loading} canWrite={activeCanWrite} onAdd={openAddModal} onEdit={openEditModal} onDelete={deleteRecord} preset={moduleFilter} onClearPreset={()=>setModuleFilter(null)}/>}
       <footer className="app-footer"><span>PT. RYAN EKA PRATAMA • SITE BONTANG</span><span>VERSI 1.1.0 <i/> PROTECTED WORKSPACE</span></footer>
     </main>
     <input ref={fileInputRef} className="hidden" type="file" accept=".xlsx,.xls" onChange={e=>importWorkbook(e.target.files?.[0])}/>
@@ -1160,4 +1162,10 @@ const saveRecord = async (formData) => {
     {modal && <RecordModal module={activeModule} row={modal.row} columns={modal.columns} canEditPrivate={canEditPrivate} onClose={()=>setModal(null)} onSave={saveRecord} busy={saveBusy}/>}
     {notice && <div className="toast"><span>{notice}</span><button onClick={()=>setNotice('')}><Icon name="close" size={14}/></button></div>}
   </div>;
+}
+
+// Halaman tes untuk kandidat (alamat /tes) dibuka tanpa login dan tanpa menu dashboard.
+export default function App() {
+  const untukKandidat = typeof window !== 'undefined' && /^\/tes\/?$/i.test(window.location.pathname);
+  return untukKandidat ? <TesKandidat /> : <AppUtama />;
 }

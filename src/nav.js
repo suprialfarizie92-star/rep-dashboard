@@ -22,6 +22,7 @@ export const NAV = [
   { id: 'kontrak', label: 'Kontrak', icon: 'edit', modules: ['Data_Kontrak'] },
   { id: 'manpower', label: 'Database Manpower', icon: 'staffing', modules: ['Data_Kebutuhan', 'Data_PICA'] },
   { id: 'rekrutmen', label: 'Rekrutmen', icon: 'recruitment', modules: ['Data_Rekrutmen'] },
+  { id: 'tes', label: 'Tes Teori', icon: 'action', modules: ['Tes'] },
   { id: 'training', label: 'Training', icon: 'training', modules: ['Training', 'TNA_Plan', 'TNA_Realisasi'], perms: ['TNA_Plan', 'TNA_Realisasi'] },
   { id: 'pembinaan', label: 'Pembinaan Karyawan', icon: 'discipline', modules: ['REKAP_SP'] },
   { id: 'input', label: 'Input data', icon: 'plus', modules: [] } // khusus admin: impor Excel

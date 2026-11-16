@@ -1,0 +1,81 @@
+/* ===== Halaman kandidat (/tes) — mobile first ===== */
+.tk { min-height:100vh; min-height:100dvh; background:#eef3f2; color:#0f2a2a; font-family:Manrope, system-ui, -apple-system, 'Segoe UI', sans-serif; display:flex; justify-content:center; }
+.tk * { box-sizing:border-box; }
+.tk-wrap { width:100%; max-width:520px; padding:14px 14px 40px; display:flex; flex-direction:column; gap:12px; }
+.tk-brand { display:flex; align-items:center; gap:10px; padding:4px 2px; }
+.tk-brand img { width:40px; height:40px; object-fit:contain; }
+.tk-brand strong { display:block; font-size:.8125rem; letter-spacing:.02em; }
+.tk-brand span { display:block; font-size:.75rem; color:#4b6361; }
+.tk-card { background:#fff; border:1px solid #d6e0de; border-radius:14px; padding:18px; display:flex; flex-direction:column; gap:12px; box-shadow:0 1px 2px rgba(15,42,42,.05); }
+.tk-card h1 { margin:0; font-size:1.25rem; line-height:1.3; }
+.tk-card p { margin:0; font-size:.9375rem; line-height:1.5; color:#35504e; }
+.tk-center { align-items:center; text-align:center; padding:28px 18px; }
+.tk-lbl { display:grid; gap:6px; font-size:.8125rem; font-weight:700; color:#35504e; }
+.tk-in { width:100%; height:52px; border:1px solid #b9c8c6; border-radius:12px; padding:0 14px; font:inherit; font-size:1.0625rem; font-weight:400; background:#fff; color:#0f2a2a; }
+.tk-in:focus { outline:2px solid #0f766e; outline-offset:1px; }
+.tk-kode { text-align:center; letter-spacing:.35em; font-weight:800; font-size:1.375rem; text-transform:uppercase; }
+.tk-btn { width:100%; height:52px; border:0; border-radius:12px; background:#0f766e; color:#fff; font:inherit; font-weight:800; font-size:1rem; cursor:pointer; }
+.tk-btn:disabled { opacity:.5; cursor:not-allowed; }
+.tk-btn.alt { background:#fff; color:#0f766e; border:1px solid #0f766e; }
+.tk-btn.done { background:#b45309; }
+.tk-link { background:none; border:0; color:#0f766e; font:inherit; font-weight:700; font-size:.875rem; padding:8px; cursor:pointer; text-align:center; }
+.tk-err { background:#fdecec; color:#9b1c1c; border:1px solid #f4bcbc; border-radius:10px; padding:10px 12px; font-size:.875rem; }
+.tk-warn { background:#fff4dc; color:#7a4a00; border:1px solid #f0d28f; border-radius:10px; padding:10px 12px; font-size:.8125rem; }
+.tk-note { font-size:.8125rem !important; color:#6b8280 !important; }
+.tk-spin { width:34px; height:34px; border-radius:50%; border:4px solid #cfe0dd; border-top-color:#0f766e; animation:tkspin 1s linear infinite; }
+@keyframes tkspin { to { transform:rotate(360deg); } }
+.tk-check { width:56px; height:56px; border-radius:50%; background:#d9f0ea; color:#0f766e; display:grid; place-items:center; font-size:1.75rem; font-weight:800; }
+.tk-bar { display:flex; justify-content:space-between; align-items:flex-end; gap:12px; }
+.tk-bar small { display:block; font-size:.6875rem; color:#4b6361; text-transform:uppercase; letter-spacing:.04em; }
+.tk-bar b { font-size:1.25rem; font-variant-numeric:tabular-nums; }
+.tk-timer { text-align:right; }
+.tk-timer.low b { color:#b91c1c; }
+.tk-prog { height:6px; border-radius:6px; background:#d6e0de; overflow:hidden; }
+.tk-prog i { display:block; height:100%; background:#0f766e; transition:width .2s; }
+.tk-soal { user-select:none; -webkit-user-select:none; }
+.tk-q { font-size:1.0625rem !important; font-weight:700; color:#0f2a2a !important; line-height:1.5 !important; }
+.tk-img { max-width:100%; border-radius:10px; }
+.tk-opsi { display:grid; gap:10px; margin-top:2px; }
+.tk-opsi-btn { display:flex; gap:12px; align-items:flex-start; text-align:left; width:100%; min-height:56px; padding:12px; border:1.5px solid #b9c8c6; border-radius:12px; background:#fff; color:#0f2a2a; font:inherit; font-size:1rem; cursor:pointer; }
+.tk-opsi-btn span { flex:0 0 30px; height:30px; border-radius:50%; background:#e3ecea; display:grid; place-items:center; font-weight:800; font-size:.875rem; }
+.tk-opsi-btn em { font-style:normal; line-height:1.45; padding-top:3px; }
+.tk-opsi-btn.on { border-color:#0f766e; background:#e4f4f0; }
+.tk-opsi-btn.on span { background:#0f766e; color:#fff; }
+.tk-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(44px, 1fr)); gap:6px; }
+.tk-grid button { height:44px; border:1px solid #b9c8c6; border-radius:8px; background:#fff; font:inherit; font-weight:700; cursor:pointer; color:#0f2a2a; }
+.tk-grid button.done { background:#d9f0ea; border-color:#0f766e; }
+.tk-grid button.cur { outline:2px solid #0f2a2a; }
+.tk-nav { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.tk-modal { position:fixed; inset:0; background:rgba(15,42,42,.55); display:grid; place-items:center; padding:16px; z-index:50; }
+.tk-modal .tk-card { width:100%; max-width:420px; }
+
+/* ===== Halaman HR: Tes Teori ===== */
+.tes-tabs { margin-bottom:14px; }
+.tes-row { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; }
+.tes-row label, .tes-form label { display:grid; gap:4px; font-size:.6875rem; font-weight:700; color:var(--text-2); }
+.tes-row input, .tes-row select, .tes-form input, .tes-form select, .tes-form textarea { height:38px; border:1px solid var(--line); border-radius:8px; background:var(--surface); color:var(--text); padding:0 10px; font:inherit; font-weight:400; font-size:.8125rem; }
+.tes-form textarea { height:auto; padding:8px 10px; min-height:96px; resize:vertical; }
+.tes-sesi-list { display:grid; gap:8px; margin-top:12px; }
+.tes-sesi-item { display:flex; justify-content:space-between; align-items:center; gap:12px; width:100%; text-align:left; border:1px solid var(--line); border-radius:10px; background:var(--surface); color:var(--text); padding:10px 12px; cursor:pointer; font:inherit; }
+.tes-sesi-item:hover { border-color:var(--accent, #0f766e); }
+.tes-sesi-item small { display:block; color:var(--muted); font-size:.6875rem; margin-top:2px; }
+.tes-kode { font:800 1.75rem/1 Manrope, sans-serif; letter-spacing:.25em; }
+.tes-head { display:grid; grid-template-columns:1fr auto; gap:16px; align-items:start; }
+.tes-qr { width:132px; height:132px; border:1px solid var(--line); border-radius:8px; background:#fff; padding:4px; cursor:zoom-in; }
+.tes-url { font-size:.75rem; color:var(--text-2); word-break:break-all; margin:6px 0 10px; }
+.tes-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.tes-note { font-size:.75rem; color:var(--text-2); margin:6px 0 0; }
+.tes-split { display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:14px; margin-top:14px; align-items:start; }
+.tes-form { display:grid; gap:10px; }
+.tes-modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.5); display:grid; place-items:center; padding:16px; z-index:60; overflow:auto; }
+.tes-modal { background:var(--surface); color:var(--text); border-radius:12px; padding:18px; width:100%; max-width:640px; display:grid; gap:12px; max-height:92vh; overflow:auto; }
+.tes-modal h3 { margin:0; font:700 1rem Manrope, sans-serif; }
+.tes-opt { display:grid; grid-template-columns:auto 1fr; gap:8px; align-items:center; }
+.tes-opt input[type="text"] { width:100%; }
+.tes-big { text-align:center; }
+.tes-big img { width:min(80vw, 420px); height:auto; background:#fff; padding:8px; border-radius:10px; }
+.tes-big .tes-kode { font-size:3rem; margin:10px 0 4px; }
+.tes-q-text { max-width:520px; white-space:normal; }
+.tes-ok { color:#0f766e; font-weight:700; }
+.tes-mini { font-size:.6875rem; color:var(--muted); }
+@media (max-width:700px) { .tes-head { grid-template-columns:1fr; } }
