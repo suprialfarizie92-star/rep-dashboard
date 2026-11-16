@@ -5,6 +5,13 @@ import Icon from './Icon.jsx';
 import { MODULES } from './modules.js';
 import { ModeToggle, ThemeDots, useAppearance } from './appearance.jsx';
 import SettingsPage from './Settings.jsx';
+import Dashboard from './Dashboard.jsx';
+import Training from './Training.jsx';
+import Lisensi from './Lisensi.jsx';
+import { NAV, TAB_LABEL } from './nav.js';
+import { licenseExpiringPeople } from './utils.js';
+import InputData from './InputData.jsx';
+import { PAGES } from './Pages.jsx';
 
 const PRIVATE_EMPLOYEE_FIELDS = new Set([
   'tempat lahir', 'tanggal lahir', 'jenis kelamin', 'status', 'agama', 'pendidikan',
@@ -192,34 +199,7 @@ function Login({ onLogin, busy, error, appearance }) {
   );
 }
 
-function StatCard({ label, value, note, icon, tone = 'blue' }) {
-  return <div className="stat-card"><div className={`stat-icon ${tone}`}><Icon name={icon} size={19}/></div><div className="stat-label">{label}</div><div className="stat-value">{value}</div><div className="stat-note">{note}</div></div>;
-}
-
-function DashboardHome({ overview, loading, onOpenModule, isAdmin, onImport }) {
-  const departments = overview.departments || [];
-  const maxDept = Math.max(1, ...departments.map(x => x.count));
-  return <div className="page-content">
-    <div className="welcome-row"><div><div className="eyebrow muted">RINGKASAN MANAJEMEN</div><h1>Dashboard Overview</h1><p className="subtle">Pantau kondisi data SDM dan operasional dalam satu tampilan.</p></div><div className="live-pill"><span className="pulse"/> DATA LIVE</div></div>
-    {!overview.hasData && <div className="import-banner"><div className="banner-icon"><Icon name="upload" size={20}/></div><div><strong>Data belum diimpor ke database</strong><p>Administrator dapat mengunggah file Data Karyawan REP 2026.xlsx untuk mengisi seluruh menu dashboard.</p></div>{isAdmin && <button className="btn primary" onClick={onImport}>Impor file Excel</button>}</div>}
-    <div className="stats-grid">
-      <StatCard label="Data Karyawan" value={loading ? '—' : overview.employees} note="Master data tercatat" icon="people" tone="blue"/>
-      <StatCard label="Data Kontrak" value={loading ? '—' : overview.contracts} note="Riwayat kontrak" icon="contract" tone="purple"/>
-      <StatCard label="Kompetensi" value={loading ? '—' : overview.competencies} note={`${overview.expiringCompetencies} akan kedaluwarsa ≤ 90 hari`} icon="certificate" tone="amber"/>
-      <StatCard label="PICA Open" value={loading ? '—' : overview.openPica} note="Tindakan belum selesai" icon="action" tone="red"/>
-    </div>
-    <div className="dashboard-grid">
-      <section className="panel department-panel"><div className="panel-heading"><div><h3>Komposisi Karyawan</h3><p className="subtle">Berdasarkan departemen</p></div><button className="text-link" onClick={()=>onOpenModule('Data_Karyawan')}>Lihat data <span>→</span></button></div>
-        {departments.length ? <div className="bar-list">{departments.slice(0,8).map(item=><div className="bar-row" key={item.name}><div className="bar-label"><span>{item.name || 'Tidak diketahui'}</span><b>{item.count}</b></div><div className="bar-track"><div className="bar-fill" style={{width:`${Math.max(3,item.count/maxDept*100)}%`}}/></div></div>)}</div> : <div className="empty-chart"><div className="empty-chart-mark"><Icon name="chart" size={24}/></div><strong>Belum ada ringkasan</strong><span>Impor workbook untuk melihat komposisi karyawan.</span></div>}
-      </section>
-      <section className="panel quick-panel"><div className="panel-heading"><div><h3>Akses Cepat</h3><p className="subtle">Menu kerja utama</p></div></div><div className="quick-grid">{[['Data_Karyawan','Data Karyawan','people'],['Data_Kontrak','Data Kontrak','contract'],['Data_Kompetensi','Kompetensi','certificate'],['Data_Rekrutmen','Rekrutmen','recruitment'],['Data_PICA','PICA','action'],['Data_Unit','Data Unit','truck']].map(([key,label,icon])=><button className="quick-item" key={key} onClick={()=>onOpenModule(key)}><span className="quick-icon"><Icon name={icon}/></span><span>{label}</span><b>↗</b></button>)}</div></section>
-    </div>
-    <div className="bottom-strip"><div className="strip-left"><span className="strip-indicator"/><div><strong>Sinkronisasi database aktif</strong><p>Perubahan data akan diperbarui otomatis pada komputer lain yang sedang membuka dashboard.</p></div></div><span className="strip-caption">SUPABASE REALTIME</span></div>
-  </div>;
-}
-
-
-function DataTablePage({ module, rows, loading, canWrite, onAdd, onEdit, onDelete }) {
+function DataTablePage({ module, rows, loading, canWrite, onAdd, onEdit, onDelete, preset, onClearPreset }) {
   const [query, setQuery] = useState('');
   const [showAllColumns, setShowAllColumns] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -231,6 +211,8 @@ function DataTablePage({ module, rows, loading, canWrite, onAdd, onEdit, onDelet
     setShowAllColumns(false);
     setCurrentPage(1);
   }, [module]);
+
+  useEffect(() => { setCurrentPage(1); }, [preset]);
 
   
 const columns = useMemo(() => {
@@ -473,15 +455,16 @@ const visibleColumns = showAllColumns
   
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const base = preset ? rows.filter(row => preset.test(row.data || {})) : rows;
 
-    if (!q) return rows;
+    if (!q) return base;
 
-    return rows.filter(row =>
+    return base.filter(row =>
       Object.entries(row.data || {}).some(([key, value]) =>
         `${key} ${displayValue(value, key)}`.toLowerCase().includes(q)
       )
     );
-  }, [rows, query]);
+  }, [rows, query, preset]);
 
   const totalPages = Math.max(
     1,
@@ -528,6 +511,13 @@ const visibleColumns = showAllColumns
           )}
         </div>
       </div>
+
+      {preset && (
+        <div className="preset-chip">
+          <span>Menampilkan: <strong>{preset.label}</strong></span>
+          <button type="button" onClick={onClearPreset}>Tampilkan semua data</button>
+        </div>
+      )}
 
       <section className="panel table-panel">
         <div className="table-toolbar">
@@ -734,6 +724,15 @@ export default function App() {
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState('');
   const [activeModule, setActiveModule] = useState('Dashboard');
+  const [activeNav, setActiveNav] = useState('dashboard');
+  const [moduleFilter, setModuleFilter] = useState(null);
+  const [inputRow, setInputRow] = useState(null);
+  // nav menentukan menu sidebar yang menyala; bila tidak diberikan, dicari dari modulnya.
+  const openModule = (key, filter = null, nav) => {
+    setModuleFilter(filter);
+    setActiveModule(key);
+    setActiveNav(nav || filter?.nav || NAV.find(n => n.modules.includes(key))?.id || 'dashboard');
+  };
   const [rows, setRows] = useState([]);
   const [overviewData, setOverviewData] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -750,6 +749,10 @@ export default function App() {
   const isAdmin = profile?.role === 'admin';
   const canEditPrivate = ['admin','hr'].includes(profile?.role);
   const allowedModules = useMemo(() => isAdmin ? MODULES : MODULES.filter(m => permissions.some(p=>p.module_key===m[0] && p.can_read)), [isAdmin, permissions]);
+  const canSee = item => item.id === 'dashboard' || (item.id === 'input' ? (isAdmin || permissions.some(p => p.module_key === 'Data_Karyawan' && p.can_write)) : isAdmin || (item.perms || item.modules).some(k => permissions.some(p => p.module_key === k && p.can_read)));
+  const visibleNav = NAV.filter(canSee);
+  const lisensiBadge = useMemo(() => licenseExpiringPeople(overviewData, 30), [overviewData]);
+  const curNav = NAV.find(n => n.id === activeNav);
   const activeCanWrite = isAdmin || permissions.some(p=>p.module_key===activeModule && p.can_write);
 const exportAllData = async (selectedModules = []) => {
   if (!isAdmin || exportBusy) return;
@@ -861,14 +864,23 @@ const exportAllData = async (selectedModules = []) => {
   const loadOverview = useCallback(async () => {
     if (!session?.user) return;
     setOverviewLoading(true);
-    const { data, error } = await supabase.from('app_data').select('module,data');
-    if (!error) setOverviewData(data || []);
+    let all = [];
+    let from = 0;
+    let failed = false;
+    for (;;) {
+      const { data, error } = await supabase.from('app_data').select('module,data').order('id', { ascending: true }).range(from, from + 999);
+      if (error) { failed = true; break; }
+      all = all.concat(data || []);
+      if (!data || data.length < 1000) break;
+      from += 1000;
+    }
+    if (!failed) setOverviewData(all);
     setOverviewLoading(false);
   }, [session]);
 
   
 const loadModule = useCallback(async (moduleKey) => {
-  if (!session?.user || moduleKey === 'Dashboard' || moduleKey === 'Settings') return;
+  if (!session?.user || moduleKey === 'Dashboard' || moduleKey === 'Settings' || moduleKey === 'Training' || moduleKey === 'Lisensi' || moduleKey === 'Input') return;
 
   setLoading(true);
 
@@ -925,39 +937,8 @@ const loadModule = useCallback(async (moduleKey) => {
     setAuthBusy(false);
   };
 
-  const logout = async () => { await supabase.auth.signOut(); setActiveModule('Dashboard'); setRows([]); };
+  const logout = async () => { await supabase.auth.signOut(); openModule('Dashboard'); setRows([]); };
 
-  const overview = useMemo(() => {
-    const grouped = new Map();
-    const moduleRows = (name) => overviewData.filter(r=>r.module===name).map(r=>r.data || {});
-    const employees = moduleRows('Data_Karyawan');
-    employees.forEach(person=>{
-      const dept = person.Departemen || person.Department || 'Tidak diketahui';
-      grouped.set(dept, (grouped.get(dept) || 0) + 1);
-    });
-    const competency = moduleRows('Data_Kompetensi');
-    const today = new Date(); today.setHours(0,0,0,0);
-    const limit = new Date(today.getTime() + 90*86400000);
-    const expiring = competency.filter(r=>{
-      const dateValue = r.Expired;
-      const iso = excelSerialToDate(dateValue);
-      if (!iso) return false;
-      const date = new Date(`${iso}T00:00:00`);
-      return date >= today && date <= limit;
-    }).length;
-    const pica = moduleRows('Data_PICA');
-    const openPica = pica.filter(r=>!/(closed|close|selesai|complete|completed)/i.test(String(r.Status || ''))).length;
-    const contracts = moduleRows('Data_Kontrak');
-    return {
-      hasData: overviewData.length > 0,
-      employees: employees.length,
-      contracts: contracts.length,
-      competencies: competency.length,
-      expiringCompetencies: expiring,
-      openPica,
-      departments: [...grouped.entries()].map(([name,count])=>({name,count})).sort((a,b)=>b.count-a.count)
-    };
-  }, [overviewData]);
 
 const openImport = () => fileInputRef.current?.click();
 
@@ -1077,10 +1058,14 @@ const importWorkbook = async (file) => {
 };
 
   const openAddModal = () => {
+    if (activeModule === 'Data_Karyawan') { setInputRow(null); openModule('Input', null, 'input'); return; }
     const columns = rows.length ? Object.keys(rows[0].data || {}) : [];
     setModal({ row: null, columns });
   };
-  const openEditModal = (row) => setModal({ row, columns: Object.keys(row.data || {}) });
+  const openEditModal = (row) => {
+    if (activeModule === 'Data_Karyawan') { setInputRow(row); openModule('Input', null, 'input'); return; }
+    setModal({ row, columns: Object.keys(row.data || {}) });
+  };
 
   
 const saveRecord = async (formData) => {
@@ -1158,12 +1143,15 @@ const saveRecord = async (formData) => {
     <span>Site Bontang</span>
   </div>
 </div>
-      <div className="nav-caption">WORKSPACE</div><button className={`nav-item ${activeModule==='Dashboard'?'active':''}`} onClick={()=>setActiveModule('Dashboard')}><Icon name="grid"/><span>Dashboard</span></button>
-      <div className="nav-caption menu-caption">DATA & MONITORING</div><nav className="main-nav">{allowedModules.map(([key,label,icon])=><button key={key} className={`nav-item ${activeModule===key?'active':''}`} onClick={()=>setActiveModule(key)}><Icon name={icon}/><span>{label}</span><b>›</b></button>)}</nav>
+      <nav className="main-nav">{visibleNav.map(item=>{
+        const on = item.id === 'input' ? activeModule === 'Input' : activeModule !== 'Settings' && activeModule !== 'Input' && activeNav === item.id;
+        return <button key={item.id} className={`nav-item ${on?'active':''}`} onClick={()=>item.id==='input' ? (setInputRow(null), openModule('Input', null, 'input')) : openModule(item.modules[0], item.preset||null, item.id)}><Icon name={item.icon}/><span>{item.label}</span>{item.id==='lisensi' && lisensiBadge>0 && <em className="nav-badge">{lisensiBadge}</em>}</button>;
+      })}</nav>
       <div className="sidebar-bottom"><button className={`nav-item ${activeModule==='Settings'?'active':''}`} onClick={()=>setActiveModule('Settings')}><Icon name="settings"/><span>Pengaturan</span></button><div className="database-status"><span className="pulse"/><div><strong>Database online</strong><small>Realtime connected</small></div></div><div className="user-mini"><div className="avatar">{(profile.display_name||profile.username||'U').slice(0,1).toUpperCase()}</div><div className="user-mini-text"><strong>{profile.display_name || profile.username}</strong><small>{String(profile.role || 'viewer').toUpperCase()}</small></div><button title="Keluar" onClick={logout}><Icon name="logout" size={17}/></button></div></div>
     </aside>
-    <main className="main-area"><header className="topbar"><div className="breadcrumb"><span>PT. RYAN EKA PRATAMA</span><b>/</b><strong>{activeModule==='Dashboard'?'Overview':activeModule==='Settings'?'Pengaturan':MODULES.find(x=>x[0]===activeModule)?.[1] || activeModule}</strong></div><div className="topbar-right"><span className="secure-label"><Icon name="lock" size={14}/> INTERNAL</span>{activeModule!=='Settings' && <button className="icon-btn refresh-btn" title="Muat ulang" aria-label="Muat ulang" onClick={()=>activeModule==='Dashboard'?loadOverview():loadModule(activeModule)}><Icon name="refresh" size={17}/></button>}<ModeToggle appearance={appearance}/><button className={`icon-btn ${activeModule==='Settings'?'active':''}`} title="Pengaturan" aria-label="Pengaturan" onClick={()=>setActiveModule('Settings')}><Icon name="settings" size={17}/></button><div className="top-avatar">{(profile.display_name||'U').slice(0,1).toUpperCase()}</div></div></header>
-      {activeModule==='Settings' ? <SettingsPage appearance={appearance} isAdmin={isAdmin} profile={profile} onNotice={setNotice} onExportAll={exportAllData} exportBusy={exportBusy}/> : activeModule==='Dashboard' ? <DashboardHome overview={overview} loading={overviewLoading} onOpenModule={setActiveModule} isAdmin={isAdmin} onImport={openImport}/> : <DataTablePage module={activeModule} rows={rows} loading={loading} canWrite={activeCanWrite} onAdd={openAddModal} onEdit={openEditModal} onDelete={deleteRecord}/>}
+    <main className="main-area"><header className="topbar"><div className="breadcrumb"><span>PT. RYAN EKA PRATAMA</span><b>/</b><strong>{activeModule==='Settings'?'Pengaturan':curNav?.label || activeModule}</strong></div><div className="topbar-right"><span className="secure-label"><Icon name="lock" size={14}/> INTERNAL</span>{activeModule!=='Settings' && <button className="icon-btn refresh-btn" title="Muat ulang" aria-label="Muat ulang" onClick={()=>['Dashboard','Training','Lisensi'].includes(activeModule)?loadOverview():loadModule(activeModule)}><Icon name="refresh" size={17}/></button>}<ModeToggle appearance={appearance}/><button className={`icon-btn ${activeModule==='Settings'?'active':''}`} title="Pengaturan" aria-label="Pengaturan" onClick={()=>setActiveModule('Settings')}><Icon name="settings" size={17}/></button><div className="top-avatar">{(profile.display_name||'U').slice(0,1).toUpperCase()}</div></div></header>
+      {activeModule!=='Settings' && curNav?.modules.length>1 && !(PAGES[activeModule] && !moduleFilter?.raw) && <div className="module-tabs" role="tablist">{curNav.modules.filter(k=>k==='Training'||isAdmin||permissions.some(p=>p.module_key===k&&p.can_read)).map(k=><button key={k} type="button" role="tab" aria-selected={activeModule===k} className={`module-tab ${activeModule===k?'active':''}`} onClick={()=>openModule(k,null,curNav.id)}>{TAB_LABEL[k]||MODULES.find(m=>m[0]===k)?.[1]||k}</button>)}</div>}
+      {activeModule==='Input' ? <InputData key={inputRow?.id||'new'} canPrivate={canEditPrivate} isAdmin={isAdmin} initialRow={inputRow} split={splitEmployeeRecord} toDate={excelSerialToDate} onImport={openImport} onSaved={loadOverview}/> : activeModule==='Settings' ? <SettingsPage appearance={appearance} isAdmin={isAdmin} profile={profile} onNotice={setNotice} onExportAll={exportAllData} exportBusy={exportBusy}/> : activeModule==='Lisensi' ? <Lisensi data={overviewData} loading={overviewLoading} canWrite={isAdmin||permissions.some(p=>p.module_key==='Data_Karyawan'&&p.can_write)} preset={moduleFilter} onRefresh={loadOverview} onOpen={openModule}/> : activeModule==='Training' ? <Training data={overviewData} loading={overviewLoading} onRefresh={loadOverview} onOpen={openModule}/> : activeModule==='Dashboard' ? <Dashboard data={overviewData} loading={overviewLoading} hasData={overviewData.length>0} isAdmin={isAdmin} onImport={openImport} onRefresh={loadOverview} onOpen={openModule}/> : (PAGES[activeModule] && !moduleFilter?.raw) ? React.createElement(PAGES[activeModule], { data: overviewData, loading: overviewLoading, onRefresh: loadOverview, onOpen: openModule, onInput: () => { setInputRow(null); openModule('Input', null, 'input'); } }) : <DataTablePage module={activeModule} rows={rows} loading={loading} canWrite={activeCanWrite} onAdd={openAddModal} onEdit={openEditModal} onDelete={deleteRecord} preset={moduleFilter} onClearPreset={()=>setModuleFilter(null)}/>}
       <footer className="app-footer"><span>PT. RYAN EKA PRATAMA • SITE BONTANG</span><span>VERSI 1.1.0 <i/> PROTECTED WORKSPACE</span></footer>
     </main>
     <input ref={fileInputRef} className="hidden" type="file" accept=".xlsx,.xls" onChange={e=>importWorkbook(e.target.files?.[0])}/>

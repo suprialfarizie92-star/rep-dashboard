@@ -1,0 +1,20 @@
+.pn-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:10px; }
+.pn-title { margin:0 0 3px; font:700 .9375rem Manrope,sans-serif; color:var(--text); }
+.pn-sub { margin:0; font-size:.75rem; color:var(--text-2); }
+.grid2 { display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:16px; align-items:start; }
+.grid2.wide-left { grid-template-columns:minmax(0,1.4fr) minmax(0,1fr); }
+.grid3 { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:16px; align-items:start; }
+.hbar { display:grid; grid-template-columns:minmax(110px, 38%) 1fr auto; gap:10px; align-items:center; padding:6px 0; font-size:.75rem; }
+.hbar small { display:block; color:var(--muted); font-size:.625rem; margin-top:1px; }
+.hbar b { min-width:34px; text-align:right; font-variant-numeric:tabular-nums; }
+.more { text-align:center; margin-top:10px; }
+.idrow-bar { display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end; }
+.idrow-bar label, .lic-bar .fl, .lic-bar label { display:grid; gap:4px; font-size:.6875rem; font-weight:700; color:var(--text-2); }
+.idrow-bar select, .lic-bar .fl select, .lic-bar label select { height:38px; min-width:130px; border:1px solid var(--line); border-radius:8px; background:var(--surface); color:var(--text); padding:0 10px; font-weight:400; }
+.pica { border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-bottom:10px; background:var(--surface); }
+.pica-head { display:flex; justify-content:space-between; gap:8px; align-items:flex-start; font-size:.8125rem; }
+.pica p { margin:6px 0; font-size:.75rem; color:var(--text-2); }
+.pica small { color:var(--muted); font-size:.6875rem; }
+.clip { display:block; max-width:360px; white-space:normal; font-size:.75rem; }
+.dcard.static { cursor:default; }
+@media (max-width:900px) { .grid2.wide-left { grid-template-columns:1fr; } .hbar { grid-template-columns:1fr auto; } .hbar .bar-track { grid-column:1 / -1; order:3; } }

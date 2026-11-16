@@ -1,0 +1,15 @@
+.idpage { max-width: 1180px; }
+.idhead { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+.idbox { border: 1px solid color-mix(in srgb, currentColor 14%, transparent); border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; background: color-mix(in srgb, currentColor 3%, transparent); }
+.idbox h2 { font-size: 15px; margin: 0 0 10px; }
+.idgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px 12px; }
+.idf { display: flex; flex-direction: column; gap: 4px; font-size: 12px; min-width: 0; }
+.idf.wide { grid-column: 1 / -1; }
+.idf input, .idf select, .idbox select { font: inherit; font-size: 13px; padding: 8px 10px; border-radius: 8px; color: inherit; background: transparent; border: 1px solid color-mix(in srgb, currentColor 22%, transparent); min-width: 0; }
+.idf input:disabled { opacity: .6; }
+.idrow { display: flex; align-items: center; gap: 12px; }
+.idrow > select { flex: 1; }
+.idrow.wrap { flex-wrap: wrap; }
+.idchip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid color-mix(in srgb, currentColor 22%, transparent); border-radius: 8px; font-size: 13px; }
+.idok { padding: 10px 12px; border-radius: 8px; margin-bottom: 12px; background: color-mix(in srgb, #1d9e75 18%, transparent); }
+@media (max-width: 700px) { .idhead { flex-direction: column; } .idrow:not(.wrap) { flex-wrap: wrap; } .idgrid { grid-template-columns: 1fr 1fr; } }
