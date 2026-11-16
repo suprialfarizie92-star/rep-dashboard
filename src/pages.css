@@ -18,3 +18,15 @@
 .clip { display:block; max-width:360px; white-space:normal; font-size:.75rem; }
 .dcard.static { cursor:default; }
 @media (max-width:900px) { .grid2.wide-left { grid-template-columns:1fr; } .hbar { grid-template-columns:1fr auto; } .hbar .bar-track { grid-column:1 / -1; order:3; } }
+.dsec-title { display:flex; align-items:center; gap:8px; min-width:0; }
+.dsec-title h3 { margin:0; }
+.dsec-toggle { width:24px; height:24px; display:inline-grid; place-items:center; border:1px solid var(--line); border-radius:6px; background:var(--surface); color:var(--text-2); font-size:.75rem; line-height:1; cursor:pointer; transition:transform .15s; }
+.dsec-toggle:hover { background:var(--bg, #f3f5f7); }
+.dsec[data-shut="1"] .dsec-toggle { transform:rotate(-90deg); }
+.dsec[data-shut="1"] .dsec-head { margin-bottom:0; }
+.dept-panel { padding:20px; }
+.profil-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:14px; margin-top:12px; align-items:start; }
+.profil-box { border:1px solid var(--line); border-radius:10px; padding:14px; background:var(--surface); }
+.profil-box .dsub { margin:0 0 2px; }
+.profil-box .subtle { margin:0 0 10px; font-size:.6875rem; }
+

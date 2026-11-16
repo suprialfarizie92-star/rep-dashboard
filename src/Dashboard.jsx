@@ -8,18 +8,35 @@ import './dashboard.css';
 const ATR_TARGET = 95; // persen; sesuaikan dengan target perusahaan
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MEI', 'JUN', 'JUL', 'AGU', 'SEP', 'OKT', 'NOV', 'DES'];
 
+// Sertifikat operasi unit di Data_Karyawan: sel terisi (mis. "V") berarti punya. Sama dengan form Input data.
+const CERTS = [['LV', 'LV'], ['Bus', 'BUS'], ['P360', 'P360/CWE'], ['FMX420', 'FMX420'], ['FMX400', 'FMX400'], ['PC210', 'PC210/300'], ['PC350', 'PC350LC'], ['D85', 'D85SS']];
+const isOn = v => { const x = String(v ?? '').trim().toLowerCase(); return x !== '' && !['0', '-', 'false', 'tidak', 'no', 'n'].includes(x); };
+const UMUR = ['Di bawah 30', '30-39', '40-49', '50 ke atas', 'Belum ada'];
+const DARAH = ['A', 'B', 'AB', 'O', 'Belum ada'];
+
 const LP = initial => ({ initial, nav: 'lisensi' }); // membuka halaman Lisensi pada tab tertentu
 
 function Section({ title, tone, module, label, preset, onOpen, children }) {
+  // Bagian bisa dilipat (minimize). Status disimpan per judul di browser ini.
+  const storeKey = `rep.ringkasan.lipat.${title}`;
+  const [shut, setShut] = useState(() => { try { return localStorage.getItem(storeKey) === '1'; } catch { return false; } });
+  const toggle = () => setShut(v => { const n = !v; try { localStorage.setItem(storeKey, n ? '1' : '0'); } catch { /* abaikan */ } return n; });
   return (
-    <section className="dsec" data-tone={tone}>
+    <section className="dsec" data-tone={tone} data-shut={shut ? '1' : '0'}>
       <div className="dsec-head">
-        <h3>{title}</h3>
+        <div className="dsec-title">
+          <button type="button" className="dsec-toggle" onClick={toggle} aria-expanded={!shut} aria-label={`${shut ? 'Buka' : 'Lipat'} bagian ${title}`} title={shut ? 'Buka' : 'Lipat'}>▾</button>
+          <h3>{title}</h3>
+        </div>
         <button type="button" className="dsec-open" onClick={() => onOpen(module, preset)}>Buka {label}</button>
       </div>
-      {children}
+      {!shut && children}
     </section>
   );
+}
+
+function Box({ title, sub, children }) {
+  return <div className="profil-box"><h4 className="dsub">{title}</h4>{sub && <p className="subtle">{sub}</p>}{children}</div>;
 }
 
 function Card({ label, value, tone, module, preset, onOpen }) {
@@ -193,11 +210,49 @@ export default function Dashboard({ data, loading, hasData, isAdmin, onImport, o
       name, value, preset: { label: `Karyawan aktif ${name}`, test: r => norm(deptOf(r)) === norm(name) && isActive(r) && statusOk(r) }
     }));
 
-    return { yr, depts, statuses, karyawan, lisensi, kompetensi, manpower, unit, soonPeople, atr, turnover, rekrutmen, kontrak, pembinaan, training, deptBars };
+    // ---- Profil karyawan (karyawan aktif, mengikuti filter Departemen dan Status) ----
+    const activeTest = r => empOk(r) && isActive(r);
+    const txt = (cols, kosong = 'Belum ada') => r => { const v = String(val(r, ...cols) ?? '').trim(); return v && v !== '-' ? v : kosong; };
+    const byCount = (a, b) => b[1] - a[1];
+    const byName = (a, b) => (a[0] === 'Belum ada' ? -1 : b[0] === 'Belum ada' ? 1 : a[0].localeCompare(b[0], 'id', { numeric: true }));
+    const byOrder = list => (a, b) => list.indexOf(a[0]) - list.indexOf(b[0]);
+    const bars = (fn, label, sort) => {
+      const m = new Map();
+      active.forEach(r => { const k = fn(r); m.set(k, (m.get(k) || 0) + 1); });
+      return [...m].sort(sort).map(([name, value]) => ({ name, value, preset: { label: `${label}: ${name}`, test: r => activeTest(r) && fn(r) === name } }));
+    };
+    const ageOf = r => { const d = toDate(val(r, 'Tanggal Lahir')); return d ? (t - d) / DAY / 365.25 : null; };
+    const umurGrup = r => { const a = ageOf(r); return a === null ? 'Belum ada' : a < 30 ? 'Di bawah 30' : a < 40 ? '30-39' : a < 50 ? '40-49' : '50 ke atas'; };
+    const jabAll = bars(txt(['Jabatan'], 'Tanpa jabatan'), 'Jabatan', byCount);
+    const jabRest = jabAll.slice(12);
+    const jabTxt = txt(['Jabatan'], 'Tanpa jabatan');
+    const jabatan = jabRest.length
+      ? [...jabAll.slice(0, 12), { name: `Jabatan lainnya (${jabRest.length})`, value: jabRest.reduce((s, x) => s + x.value, 0), preset: { label: 'Jabatan lainnya', test: r => activeTest(r) && jabRest.some(x => x.name === jabTxt(r)) } }]
+      : jabAll;
+    const lengkap = (label, ...cols) => {
+      const ok = r => { const v = val(r, ...cols); return v !== undefined && String(v).trim() !== ''; };
+      return { name: label, value: active.filter(ok).length, preset: { label: `Belum ada ${label.toLowerCase()}`, test: r => activeTest(r) && !ok(r) } };
+    };
+    const lisensiJenis = new Map();
+    docs.filter(x => x.left >= 0 && x.left <= win).forEach(x => lisensiJenis.set(x.type, (lisensiJenis.get(x.type) || 0) + 1));
+    const profil = {
+      total: active.length,
+      lisensi: [...lisensiJenis].sort(byCount).map(([name, value]) => ({ name, value, preset: LP('segera') })),
+      kelengkapan: [lengkap('Tanggal lahir', 'Tanggal Lahir'), lengkap('Tanggal masuk', 'Tanggal Masuk'), lengkap('Status karyawan', 'Status Karyawan'), lengkap('Email', 'Email'),
+        lengkap('Golongan darah', 'Gol. Darah'), lengkap('Ring domisili', 'Ring'), lengkap('Alamat domisili', 'Domisili')],
+      jabatan,
+      pendidikan: bars(txt(['Pendidikan']), 'Pendidikan', byCount),
+      ring: bars(txt(['Ring']), 'Ring', byName),
+      umur: bars(umurGrup, 'Kelompok umur', byOrder(UMUR)),
+      darah: bars(r => String(val(r, 'Gol. Darah') ?? '').trim().toUpperCase() || 'Belum ada', 'Golongan darah', byOrder(DARAH)),
+      sertifikat: CERTS.map(([k, l]) => ({ name: l, value: active.filter(r => isOn(val(r, k))).length, preset: { label: `Sertifikat ${l}`, test: r => activeTest(r) && isOn(val(r, k)) } }))
+    };
+
+    return { yr, depts, statuses, karyawan, profil, lisensi, kompetensi, manpower, unit, soonPeople, atr, turnover, rekrutmen, kontrak, pembinaan, training, deptBars };
   }, [data, dept, status, win]);
 
   const n = x => fmt(x.n, 0);
-  const { karyawan: K, lisensi: L, kompetensi: KM, manpower: MP, unit: U, atr: A, turnover: T, rekrutmen: R, kontrak: C, pembinaan: P, training: TR } = D;
+  const { karyawan: K, profil: PF, lisensi: L, kompetensi: KM, manpower: MP, unit: U, atr: A, turnover: T, rekrutmen: R, kontrak: C, pembinaan: P, training: TR } = D;
 
   return (
     <div className="page-content dash">
@@ -225,6 +280,27 @@ export default function Dashboard({ data, loading, hasData, isAdmin, onImport, o
           <Card label="Rata-rata masa kerja" value={K.masaKerja === null ? '—' : `${fmt(K.masaKerja)} th`} tone="blue" module="Data_Karyawan" onOpen={open} />
           <Card label={`Kontrak berakhir ≤ ${win} hari`} value={n(K.soon)} tone="amber" module="Data_Karyawan" preset={K.soon.preset} onOpen={open} />
           <Card label="Kontrak sudah lewat" value={n(K.over)} tone="red" module="Data_Karyawan" preset={K.over.preset} onOpen={open} />
+        </div>
+      </Section>
+
+      <Section title="Profil karyawan" tone="blue" module="Data_Karyawan" label="Karyawan" onOpen={open}>
+        <p className="subtle">Karyawan aktif ({fmt(PF.total, 0)} orang) menurut jabatan, pendidikan, ring, umur, golongan darah, sertifikat, lisensi, dan kelengkapan data. Klik batang untuk membuka datanya.</p>
+        <div className="profil-grid">
+          <Box title="Karyawan per departemen" sub="Karyawan aktif.">
+            {D.deptBars.length ? <BarList items={D.deptBars} module="Data_Karyawan" onOpen={open} /> : <p className="subtle">Belum ada data karyawan.</p>}
+          </Box>
+          <Box title="Lisensi per jenis" sub={`Dokumen yang habis dalam ${win} hari.`}>
+            {PF.lisensi.length ? <BarList items={PF.lisensi} module="Lisensi" onOpen={open} /> : <p className="subtle">Tidak ada lisensi yang habis dalam {win} hari.</p>}
+          </Box>
+          <Box title="Kelengkapan data" sub="Jumlah karyawan yang sudah terisi. Klik batang untuk melihat yang belum terisi.">
+            <BarList items={PF.kelengkapan} module="Data_Karyawan" onOpen={open} max={Math.max(1, PF.total)} />
+          </Box>
+          <Box title="Karyawan per jabatan"><BarList items={PF.jabatan} module="Data_Karyawan" onOpen={open} /></Box>
+          <Box title="Pendidikan terakhir" sub="Jumlah karyawan per jenjang."><BarList items={PF.pendidikan} module="Data_Karyawan" onOpen={open} /></Box>
+          <Box title="Ring domisili" sub="Sebaran karyawan per ring."><BarList items={PF.ring} module="Data_Karyawan" onOpen={open} /></Box>
+          <Box title="Kelompok umur" sub="Berdasarkan tanggal lahir."><BarList items={PF.umur} module="Data_Karyawan" onOpen={open} /></Box>
+          <Box title="Golongan darah" sub="Karyawan yang datanya tersedia."><BarList items={PF.darah} module="Data_Karyawan" onOpen={open} /></Box>
+          <Box title="Karyawan bersertifikat operasi unit" sub="Jumlah karyawan per jenis sertifikat."><BarList items={PF.sertifikat} module="Data_Karyawan" onOpen={open} /></Box>
         </div>
       </Section>
 
@@ -334,11 +410,6 @@ export default function Dashboard({ data, loading, hasData, isAdmin, onImport, o
         </div>
         {P.jenis.length > 0 && <><h4 className="dsub">Kasus per jenis ({D.yr})</h4><BarList items={P.jenis} module="REKAP_SP" onOpen={open} /></>}
       </Section>
-
-      <section className="panel dept-panel">
-        <div className="panel-heading"><div><h3>Karyawan per departemen</h3><p className="subtle">Karyawan aktif. Klik batang untuk membuka datanya.</p></div></div>
-        {D.deptBars.length ? <BarList items={D.deptBars} module="Data_Karyawan" onOpen={open} /> : <p className="subtle">Belum ada data karyawan.</p>}
-      </section>
     </div>
   );
 }
