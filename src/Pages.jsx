@@ -79,12 +79,21 @@ function Columns({ items, max, base = 0 }) {
   })}</div>;
 }
 
-function Tbl({ cols, rows, onRow, limit0 = 25, empty }) {
+function Tbl({ cols, rows: rowsIn, onRow, limit0 = 25, empty }) {
   const [n, setN] = useState(limit0);
+  const [sk, setSk] = useState(null); // { h: judul kolom, dir: 1 naik | -1 turun }
+  const rows = useMemo(() => {
+    const c = sk && cols.find(x => x.h === sk.h);
+    if (!c || !c.sort) return rowsIn;
+    const empty = v => v === null || v === undefined || v === '';
+    return [...rowsIn].sort((a, b) => { const x = c.sort(a); const y = c.sort(b); if (empty(x)) return empty(y) ? 0 : 1; if (empty(y)) return -1; return (x > y ? 1 : x < y ? -1 : 0) * sk.dir; });
+  }, [rowsIn, cols, sk]);
+  const klik = h => setSk(cur => (!cur || cur.h !== h ? { h, dir: 1 } : cur.dir === 1 ? { h, dir: -1 } : null));
   return <>
     <div className="tr-scroll" style={{ maxHeight: 560 }}>
       <table className="ttable">
-        <thead><tr>{cols.map(c => <th key={c.h} className={c.num ? 'num' : ''}>{c.h}</th>)}</tr></thead>
+        <thead><tr>{cols.map(c => <th key={c.h} className={c.num ? 'num' : ''} aria-sort={c.sort && sk?.h === c.h ? (sk.dir === 1 ? 'ascending' : 'descending') : undefined}>
+          {c.sort ? <button type="button" onClick={() => klik(c.h)} title="Klik untuk mengurutkan" style={{ background: 'none', border: 0, padding: 0, font: 'inherit', color: 'inherit', cursor: 'pointer', textTransform: 'inherit', letterSpacing: 'inherit' }}>{c.h} {sk?.h === c.h ? (sk.dir === 1 ? '▲' : '▼') : '↕'}</button> : c.h}</th>)}</tr></thead>
         <tbody>{rows.slice(0, n).map(r => (
           <tr key={r.k} className={onRow ? 'trow' : ''} onClick={onRow ? () => onRow(r) : undefined}>{cols.map(c => <td key={c.h} className={c.num ? 'num' : ''}>{c.r(r)}</td>)}</tr>
         ))}</tbody>
@@ -352,6 +361,7 @@ const filled = v => v !== undefined && v !== null && String(v).trim() !== '';
 function RekrutmenPage({ data, loading, onRefresh, onOpen, canPrivate, canWrite, onAddKandidat, onEditKandidat }) {
   const [tab, setTab] = useState('semua'); const [q, setQ] = useState('');
   // NIK lengkap hanya dimuat untuk admin/HR (database menolak role lain)
+  const [dari, setDari] = useState(''); const [sampai, setSampai] = useState('');
   const [priv, setPriv] = useState({});
   useEffect(() => {
     if (!canPrivate) { setPriv({}); return undefined; }
@@ -376,13 +386,13 @@ function RekrutmenPage({ data, loading, onRefresh, onOpen, canPrivate, canWrite,
     const rows = rec.map((r, i) => {
       const hasil = String(val(r, 'Hasil Akhir') ?? '');
       const last = tahapKey ? null : [...stages].reverse().find(x => filled(r[x.key]));
-      return { k: i, ri: recRows[i]?.row_index, r, nama: pick(r, /^nama/i), jab: pick(r, /^(jabatan|posisi|position)/i), sumber: pick(r, /sumber/i), alasan: pick(r, /alasan|reason/i), hasil, done: DONE.test(hasil), no: NO.test(hasil), tth: num(val(r, 'Time to Hire (Hari)')), tahap: tahapKey ? (filled(r[tahapKey]) ? String(r[tahapKey]) : '—') : last ? last.s : '—' };
+      return { k: i, ri: recRows[i]?.row_index, r, lamar: toDate(pick(r, /^(tanggal|tgl)\s*lamar|^lamaran\s*masuk|apply\s*date/i)), nama: pick(r, /^nama/i), jab: pick(r, /^(jabatan|posisi|position)/i), sumber: pick(r, /sumber/i), alasan: pick(r, /alasan|reason/i), hasil, done: DONE.test(hasil), no: NO.test(hasil), tth: num(val(r, 'Time to Hire (Hari)')), tahap: tahapKey ? (filled(r[tahapKey]) ? String(r[tahapKey]) : '—') : last ? last.s : '—' };
     });
     const sc = name => {
       if (tahapKey) { const i = STAGES.findIndex(s => nk(s) === nk(name)); return i < 0 ? null : rec.filter(r => idxOf(r) >= i).length; }
       const st = stages.find(x => nk(x.s) === nk(name)); return st ? rec.filter(r => filled(r[st.key])).length : null;
     };
-    const lamKey = (stages.find(x => nk(x.s) === 'lamaranmasuk') || {}).key || keys.find(k => /lamar|apply/i.test(k));
+    const lamKey = (stages.find(x => nk(x.s) === 'lamaranmasuk') || {}).key || keys.find(k => /^(tanggal|tgl)\s*lamar|^lamaran\s*masuk|apply\s*date/i.test(k));
     const trend = new Map();
     if (lamKey) rec.forEach(r => { const d = toDate(r[lamKey]); if (d) { const key = d.getFullYear() * 12 + d.getMonth(); trend.set(key, { lbl: `${BLN[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`, v: (trend.get(key)?.v || 0) + 1 }); } });
     const th = new Map();
@@ -400,7 +410,9 @@ function RekrutmenPage({ data, loading, onRefresh, onOpen, canPrivate, canWrite,
   const nikOf = x => (canPrivate ? digits(getKey(priv[x.ri] || {}, 'NIK')) : '');
   const tanpaNik = rows.filter(x => canPrivate && !nikOf(x)).length;
   const inTab = x => (tab === 'semua' || (tab === 'proses' ? R.proses(x) : tab === 'diterima' ? x.done : tab === 'nik' ? !nikOf(x) : x.no));
-  const list = rows.filter(x => inTab(x) && (!needle || hay(x.nama, x.jab, x.sumber, nikOf(x)).includes(needle)));
+  const tglDari = dari ? new Date(`${dari}T00:00:00`) : null; const tglSampai = sampai ? new Date(`${sampai}T23:59:59`) : null;
+  const inTgl = x => (!tglDari && !tglSampai) || (x.lamar && (!tglDari || x.lamar >= tglDari) && (!tglSampai || x.lamar <= tglSampai));
+  const list = rows.filter(x => inTab(x) && inTgl(x) && (!needle || hay(x.nama, x.jab, x.sumber, nikOf(x)).includes(needle)));
   return <Wrap loading={loading} data={data}>
     <Head title="Rekrutmen" sub="Kebutuhan jabatan yang masih kurang, kandidat pelamar, tahap seleksi, sumber, dan time to hire. Klik baris kandidat untuk memperbarui.">{canWrite && onAddKandidat && <button type="button" className="btn primary" onClick={onAddKandidat}><Icon name="plus" size={15} /> Tambah kandidat</button>}<Refresh onRefresh={onRefresh} /></Head>
     <Cards items={[{ v: fmt(needs.length, 0), l: 'Jabatan perlu diisi', t: 'red' }, { v: fmt(needs.reduce((s, n) => s + n.kurang, 0), 0), l: 'Total kebutuhan orang', t: 'amber' }, { v: fmt(rows.length, 0), l: 'Total kandidat', t: 'blue', go: () => setTab('semua'), on: tab === 'semua' },
@@ -425,8 +437,13 @@ function RekrutmenPage({ data, loading, onRefresh, onOpen, canPrivate, canWrite,
     </Panel>
     <Panel title="Daftar kandidat" sub="Klik baris untuk mengubah hasil, tahap, atau tanggal.">
       <Bar q={q} setQ={setQ} ph={canPrivate ? 'Cari nama, NIK, jabatan, sumber' : 'Cari nama, jabatan, sumber'} tab={tab} setTab={setTab} tabs={[['semua', 'Semua'], ['proses', 'Proses'], ['diterima', 'Diterima'], ['ditolak', 'Ditolak'], ...(canPrivate ? [['nik', `NIK belum lengkap (${tanpaNik})`]] : [])]} total={`${list.length} kandidat`} />
-      <Tbl rows={list} onRow={x => (canWrite && onEditKandidat && x.ri ? onEditKandidat(x.ri) : onOpen('Data_Rekrutmen', RAW('rekrutmen', r => norm(pick(r, /^nama/i)) === norm(x.nama), `Kandidat • ${x.nama}`)))} cols={[{ h: 'Nama', r: x => <strong>{x.nama || '—'}</strong> }, ...(canPrivate ? [{ h: 'NIK', r: x => nikOf(x) || <Bdg tone="amber" text="NIK belum lengkap" /> }] : []), { h: 'Jabatan', r: x => x.jab || '—' }, { h: 'Sumber', r: x => x.sumber || '—' },
-        { h: 'Tahap terakhir', r: x => x.tahap }, { h: 'Hasil akhir', r: x => <Bdg tone={x.done ? 'green' : x.no ? 'red' : 'amber'} text={x.hasil || 'Proses'} /> }, { h: 'Time to hire', num: 1, r: x => (x.tth === null ? '—' : `${fmt(x.tth, 0)} hari`) }]} />
+      <div className="lic-bar" style={{ marginTop: 8 }}>
+        <label className="subtle" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>Tanggal lamar dari <input type="date" className="dash-select" value={dari} max={sampai || undefined} onChange={e => setDari(e.target.value)} /></label>
+        <label className="subtle" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>sampai <input type="date" className="dash-select" value={sampai} min={dari || undefined} onChange={e => setSampai(e.target.value)} /></label>
+        {(dari || sampai) && <button type="button" className="btn light" onClick={() => { setDari(''); setSampai(''); }}>Hapus filter tanggal</button>}
+      </div>
+      <Tbl rows={list} onRow={x => (canWrite && onEditKandidat && x.ri ? onEditKandidat(x.ri) : onOpen('Data_Rekrutmen', RAW('rekrutmen', r => norm(pick(r, /^nama/i)) === norm(x.nama), `Kandidat • ${x.nama}`)))} cols={[{ h: 'Nama', sort: x => norm(x.nama), r: x => <strong>{x.nama || '—'}</strong> }, ...(canPrivate ? [{ h: 'NIK', r: x => nikOf(x) || <Bdg tone="amber" text="NIK belum lengkap" /> }] : []), { h: 'Jabatan', r: x => x.jab || '—' }, { h: 'Sumber', r: x => x.sumber || '—' }, { h: 'Tanggal lamar', sort: x => (x.lamar ? x.lamar.getTime() : null), r: x => fd(x.lamar) },
+        { h: 'Tahap terakhir', r: x => x.tahap }, { h: 'Hasil akhir', r: x => <Bdg tone={x.done ? 'green' : x.no ? 'red' : 'amber'} text={x.hasil || 'Proses'} /> }, { h: 'Time to hire', num: 1, sort: x => x.tth, r: x => (x.tth === null ? '—' : `${fmt(x.tth, 0)} hari`) }]} />
     </Panel>
   </Wrap>;
 }
