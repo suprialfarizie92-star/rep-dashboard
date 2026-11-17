@@ -8,6 +8,11 @@ import './tes.css';
 const KEY = 'rep-tes-token';
 const KEY_KODE = 'rep-tes-kode';
 const KEY_NAMA = 'rep-tes-nama';
+const KEY_PINDAH = 'rep-tes-pindah';
+// Peringatan pindah halaman. Ubah angka di bawah bila perlu.
+const PERINGATAN_AKTIF = true; // false = hanya spanduk biasa, tanpa jendela peringatan
+const BATAS_PERINGATAN = 3;    // mulai perpindahan ke-3, muncul jendela peringatan layar penuh
+const TAHAN_BACA_DETIK = 4;    // tombol "Saya mengerti" aktif setelah sekian detik
 const store = {
   get: k => { try { return sessionStorage.getItem(k) || ''; } catch { return ''; } },
   set: (k, v) => { try { sessionStorage.setItem(k, v); } catch { /* penyimpanan browser tidak tersedia */ } },
@@ -39,6 +44,9 @@ export default function TesKandidat() {
   const [offline, setOffline] = useState(false);
   const [grid, setGrid] = useState(false);
   const [pindah, setPindah] = useState(false);
+  const [kali, setKali] = useState(() => Number(store.get(KEY_PINDAH)) || 0);
+  const [peringatan, setPeringatan] = useState(0);
+  const [siapTutup, setSiapTutup] = useState(false);
   const [konfirmasi, setKonfirmasi] = useState(false);
 
   const tokenRef = useRef(store.get(KEY));
@@ -48,7 +56,7 @@ export default function TesKandidat() {
   const finishing = useRef(false);
 
   const akhiri = useCallback(() => {
-    store.del(KEY); store.del(KEY_NAMA);
+    store.del(KEY); store.del(KEY_NAMA); store.del(KEY_PINDAH);
     tokenRef.current = '';
     setStep('selesai');
   }, []);
@@ -165,12 +173,23 @@ export default function TesKandidat() {
   useEffect(() => {
     if (step !== 'soal') return undefined;
     const on = () => {
-      if (document.hidden) rpc('tes_catat_pindah', { p_token: tokenRef.current }).catch(() => {});
-      else setPindah(true);
+      if (document.hidden) {
+        const n = (Number(store.get(KEY_PINDAH)) || 0) + 1;
+        store.set(KEY_PINDAH, String(n)); setKali(n);
+        rpc('tes_catat_pindah', { p_token: tokenRef.current }).catch(() => {});
+      } else {
+        const n = Number(store.get(KEY_PINDAH)) || 0;
+        if (PERINGATAN_AKTIF && n >= BATAS_PERINGATAN) setPeringatan(n); else setPindah(true);
+      }
     };
     document.addEventListener('visibilitychange', on);
     return () => document.removeEventListener('visibilitychange', on);
   }, [step]);
+  useEffect(() => {
+    if (!peringatan) { setSiapTutup(false); return undefined; }
+    const id = setTimeout(() => setSiapTutup(true), TAHAN_BACA_DETIK * 1000);
+    return () => clearTimeout(id);
+  }, [peringatan]);
   useEffect(() => {
     if (!pindah) return undefined;
     const id = setTimeout(() => setPindah(false), 6000);
@@ -185,7 +204,7 @@ export default function TesKandidat() {
     try {
       const r = await rpc('tes_masuk', { p_kode: kode, p_peserta: pilih, p_hp4: hp4 });
       if (!r?.ok) { setErr(r?.pesan || 'Tidak dapat masuk.'); return; }
-      tokenRef.current = r.token; store.set(KEY, r.token); store.set(KEY_NAMA, r.nama || '');
+      tokenRef.current = r.token; store.set(KEY, r.token); store.del(KEY_PINDAH); setKali(0); store.set(KEY_NAMA, r.nama || '');
       setNama(r.nama || ''); setStep('tunggu');
     } catch (ex) { setErr(ex.message); } finally { setBusy(false); }
   };
@@ -255,7 +274,7 @@ export default function TesKandidat() {
               <div className={`tk-timer${sisa <= 300 ? ' low' : ''}`}><small>Sisa waktu</small><b>{mmss(sisa)}</b></div>
             </div>
             <div className="tk-prog"><i style={{ width: `${(terjawab / soal.length) * 100}%` }} /></div>
-            {pindah && <div className="tk-warn">Tetap berada di halaman tes sampai selesai. Perpindahan halaman dicatat.</div>}
+            {pindah && <div className="tk-warn">Tetap berada di halaman tes sampai selesai. Perpindahan halaman ke-{kali} dicatat dan dapat dilihat petugas HR.</div>}
             {offline && <div className="tk-warn">Sinyal terputus. Jawaban Anda akan dikirim otomatis begitu tersambung.</div>}
 
             <div className="tk-card tk-soal">
@@ -285,6 +304,17 @@ export default function TesKandidat() {
                 : <button type="button" className="tk-btn done" onClick={() => setKonfirmasi(true)}>Selesai</button>}
             </div>
             {idx < soal.length - 1 && <button type="button" className="tk-link" onClick={() => setKonfirmasi(true)}>Akhiri tes sekarang</button>}
+
+            {peringatan > 0 && (
+              <div className="tk-modal" role="alertdialog" aria-modal="true">
+                <div className="tk-card">
+                  <h1>Peringatan</h1>
+                  <p>Anda sudah meninggalkan halaman tes sebanyak <b>{peringatan} kali</b>. Setiap perpindahan dicatat dan dapat dilihat petugas HR.</p>
+                  <p>Tetaplah di halaman ini sampai tes selesai. Jangan membuka aplikasi atau tab lain.</p>
+                  <button type="button" className="tk-btn" disabled={!siapTutup} onClick={() => setPeringatan(0)}>{siapTutup ? 'Saya mengerti' : 'Harap baca peringatan ini...'}</button>
+                </div>
+              </div>
+            )}
 
             {konfirmasi && (
               <div className="tk-modal" role="dialog" aria-modal="true">

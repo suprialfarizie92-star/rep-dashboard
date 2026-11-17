@@ -753,7 +753,7 @@ function AppUtama() {
   const isAdmin = profile?.role === 'admin';
   const canEditPrivate = ['admin','hr'].includes(profile?.role);
   const allowedModules = useMemo(() => isAdmin ? MODULES : MODULES.filter(m => permissions.some(p=>p.module_key===m[0] && p.can_read)), [isAdmin, permissions]);
-  const canSee = item => item.id === 'dashboard' || (item.id === 'tes' ? canEditPrivate : item.id === 'input' ? (isAdmin || permissions.some(p => p.module_key === 'Data_Karyawan' && p.can_write)) : isAdmin || (item.perms || item.modules).some(k => permissions.some(p => p.module_key === k && p.can_read)));
+  const canSee = item => item.id === 'dashboard' || (item.id === 'tes' ? (isAdmin || permissions.some(p => p.module_key === 'Tes_Teori' && p.can_write)) : item.id === 'input' ? (isAdmin || permissions.some(p => p.module_key === 'Data_Karyawan' && p.can_write)) : isAdmin || (item.perms || item.modules).some(k => permissions.some(p => p.module_key === k && p.can_read)));
   const visibleNav = NAV.filter(canSee);
   const lisensiBadge = useMemo(() => licenseExpiringPeople(overviewData, 30), [overviewData]);
   const curNav = NAV.find(n => n.id === activeNav);

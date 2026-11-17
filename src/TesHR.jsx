@@ -18,6 +18,16 @@ const P_TONE = { terdaftar: 'gray', masuk: 'amber', mengerjakan: 'blue', selesai
 
 const digits = s => String(s ?? '').replace(/\D/g, '');
 const waktu = s => (s === null || s === undefined ? '—' : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`);
+// Detik sekali bila ada sesi berjalan, supaya hitung mundur bergerak
+function useNow(aktif) {
+  const [n, setN] = useState(Date.now());
+  useEffect(() => { if (!aktif) return undefined; setN(Date.now()); const id = setInterval(() => setN(Date.now()), 1000); return () => clearInterval(id); }, [aktif]);
+  return n;
+}
+const BATAS_MERAH = 300; // detik: sisa waktu di bawah ini tampil merah, dan jumlah pindah tab dari 3 ditandai
+const BATAS_PINDAH = 3;
+// Sisa detik; null bila belum bisa dihitung. tambahan = menit tambahan khusus peserta.
+const sisaDetik = (s, pk, now, tambahan = 0) => (s?.mulai_at && pk?.durasi_menit ? Math.round((new Date(s.mulai_at).getTime() + (Number(pk.durasi_menit) + Number(tambahan || 0)) * 60000 - now) / 1000) : null);
 const tgl = v => (v ? new Date(v).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
 const hasilOf = p => (Array.isArray(p.tes_hasil) ? p.tes_hasil[0] : p.tes_hasil) || null;
 const pick = (r, re) => { const k = Object.keys(r).find(x => re.test(x) && r[x] !== null && r[x] !== ''); return k === undefined ? undefined : r[k]; };
@@ -106,6 +116,8 @@ function SesiTab({ paket, sesi, soal, data, aktif, setAktif, muat, notify, onCha
     } catch (e) { notify({ err: e.message }); } finally { setBusy(false); }
   };
 
+  const adaJalan = sesi.some(x => x.status === 'berjalan');
+  const now = useNow(adaJalan && !aktif);
   const cur = sesi.find(s => s.id === aktif);
   if (cur) return <SesiDetail key={cur.id} s={cur} paket={paket} soal={soal} data={data} muat={muat} notify={notify} onChanged={onChanged} kembali={() => setAktif('')} />;
 
@@ -121,7 +133,10 @@ function SesiTab({ paket, sesi, soal, data, aktif, setAktif, muat, notify, onCha
         {sesi.map(s => (
           <button type="button" key={s.id} className="tes-sesi-item" onClick={() => setAktif(s.id)}>
             <span><strong>{s.judul}</strong><small>Kode {s.kode} • dibuat {tgl(s.created_at)}</small></span>
-            <span className="badge" data-tone={S_TONE[s.status]}>{S_LABEL[s.status]}</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {s.status === 'berjalan' && (() => { const sd = sisaDetik(s, paket.find(p => p.id === s.paket_id), now); return sd === null ? null : <small style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: sd <= BATAS_MERAH ? '#b42318' : undefined }}>{sd > 0 ? `Sisa ${waktu(sd)}` : 'Waktu habis'}</small>; })()}
+              <span className="badge" data-tone={S_TONE[s.status]}>{S_LABEL[s.status]}</span>
+            </span>
           </button>
         ))}
         {!sesi.length && <div className="no-results">Belum ada sesi tes.</div>}
@@ -144,6 +159,8 @@ function SesiDetail({ s, paket, soal, data, muat, notify, kembali, onChanged }) 
   const pk = paket.find(p => p.id === s.paket_id);
   const url = `${window.location.origin}/tes?kode=${s.kode}`;
   const ditutup = s.status === 'ditutup';
+  const now = useNow(s.status === 'berjalan');
+  const sisaSesi = s.status === 'berjalan' ? sisaDetik(s, pk, now) : null;
   const [qr, setQr] = useState('');
   const [besar, setBesar] = useState(false);
   const [peserta, setPeserta] = useState([]);
@@ -300,6 +317,13 @@ function SesiDetail({ s, paket, soal, data, muat, notify, kembali, onChanged }) 
         <div className="tes-head">
           <div>
             <span className="badge" data-tone={S_TONE[s.status]}>{S_LABEL[s.status]}</span>
+            {s.status === 'berjalan' && sisaSesi !== null && (
+              <div style={{ margin: '8px 0 2px', fontSize: 13 }}>
+                <span className="subtle">Sisa waktu sesi </span>
+                <strong style={{ fontSize: 22, fontVariantNumeric: 'tabular-nums', color: sisaSesi <= BATAS_MERAH ? '#b42318' : undefined }}>{sisaSesi > 0 ? waktu(sisaSesi) : 'Waktu habis'}</strong>
+                <span className="subtle"> • berakhir pukul {new Date(new Date(s.mulai_at).getTime() + Number(pk?.durasi_menit) * 60000).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
+              </div>
+            )}
             <div className="tes-kode" aria-label="Kode sesi">{s.kode}</div>
             <div className="tes-url">{url}</div>
             <div className="tes-actions">
@@ -355,7 +379,7 @@ function SesiDetail({ s, paket, soal, data, muat, notify, kembali, onChanged }) 
             <table className="ttable">
               <thead>
                 <tr>
-                  <th>Nama</th><th>HP</th><th>Status</th>
+                  <th>Nama</th><th>HP</th><th>Status</th>{!ditutup && s.status === 'berjalan' ? <th className="num">Sisa waktu</th> : null}
                   {ditutup ? <><th className="num">Skor</th><th className="num">Benar</th><th>Hasil</th><th className="num">Durasi</th></> : null}
                   <th className="num">Pindah tab</th><th>Aksi</th>
                 </tr>
@@ -366,13 +390,19 @@ function SesiDetail({ s, paket, soal, data, muat, notify, kembali, onChanged }) 
                     <td><strong>{p.nama}</strong>{p.tambahan_menit > 0 && <small className="tes-mini"> +{p.tambahan_menit} mnt</small>}</td>
                     <td>••••{p.hp4}</td>
                     <td><span className="badge" data-tone={P_TONE[p.status]}>{P_LABEL[p.status]}</span>{p.gagal_masuk >= 5 && <span className="badge" data-tone="red" style={{ marginLeft: 6 }}>Terkunci</span>}</td>
+                    {!ditutup && s.status === 'berjalan' ? <td className="num" style={{ fontVariantNumeric: 'tabular-nums' }}>{(() => {
+                      if (p.status === 'selesai') return 'Selesai';
+                      if (p.status !== 'mengerjakan') return '—';
+                      const sd = sisaDetik(s, pk, now, p.tambahan_menit);
+                      return sd === null ? '—' : <span style={{ fontWeight: 600, color: sd <= BATAS_MERAH ? '#b42318' : undefined }}>{sd > 0 ? waktu(sd) : 'Habis'}</span>;
+                    })()}</td> : null}
                     {ditutup ? <>
                       <td className="num">{h ? Number(h.skor).toLocaleString('id-ID', { maximumFractionDigits: 1 }) : '—'}</td>
                       <td className="num">{h ? `${h.benar}/${h.total}` : '—'}</td>
                       <td>{h ? <span className="badge" data-tone={h.lulus ? 'green' : 'red'}>{h.lulus ? 'Lulus' : 'Tidak lulus'}</span> : '—'}{h?.otomatis && <small className="tes-mini"> otomatis</small>}</td>
                       <td className="num">{waktu(h?.durasi_detik)}</td>
                     </> : null}
-                    <td className="num">{p.pindah_tab}</td>
+                    <td className="num">{p.pindah_tab >= BATAS_PINDAH ? <span className="badge" data-tone="red" title="Sering berpindah halaman">{p.pindah_tab}×</span> : p.pindah_tab}</td>
                     <td>
                       <div className="tes-actions">
                         {!ditutup && p.status !== 'selesai' && s.status === 'berjalan' && <button type="button" className="btn light mini" onClick={() => tambahWaktu(p)}>+ Waktu</button>}
