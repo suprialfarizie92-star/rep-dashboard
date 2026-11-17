@@ -41,6 +41,8 @@ export default function KandidatForm({ rowIndex = null, data = [], canPrivate, o
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [rec, setRec] = useState(null); // baris asli (id, row_index, data) saat mengubah
+  const [hapusMode, setHapusMode] = useState(false);
+  const [ketik, setKetik] = useState('');
   const [priv, setPriv] = useState({});
   const [f, setF] = useState({ nama: '', jab: '', sumber: SUMBER[0], lamar: todayIso(), tahap: TAHAP[0], hasil: 'Proses', alasan: '', detail: '', terima: '', catatan: '', nik: '', hp: '' });
   const set = (k, v) => setF(x => ({ ...x, [k]: v }));
@@ -147,6 +149,22 @@ export default function KandidatForm({ rowIndex = null, data = [], canPrivate, o
     finally { setBusy(false); }
   };
 
+  // Hapus kandidat (hanya admin/HR): NIK/HP privat dihapus dulu supaya tidak menggantung dan menempel ke kandidat baru
+  const hapusKandidat = async () => {
+    if (!rec || ketik.trim().toUpperCase() !== 'HAPUS') return;
+    setError(''); setBusy(true);
+    try {
+      const p = await supabase.from('app_private_data').delete().eq('module', REK).eq('row_index', rec.row_index);
+      if (p.error) throw p.error;
+      const a = await supabase.from('app_data').delete().eq('id', rec.id).select('id');
+      if (a.error) throw a.error;
+      if (!a.data || !a.data.length) throw new Error('Kandidat tidak terhapus. Periksa izin akun Anda.');
+      await onSaved?.();
+      onClose();
+    } catch (err) { setError(err.message || 'Gagal menghapus kandidat.'); }
+    finally { setBusy(false); }
+  };
+
   return <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
     <form className="record-modal" onSubmit={submit}>
       <div className="modal-head"><div><div className="eyebrow muted">{rec ? 'PERBARUI KANDIDAT' : 'KANDIDAT BARU'}</div><h2>{rec ? 'Ubah kandidat' : 'Tambah kandidat'}</h2>
@@ -171,7 +189,22 @@ export default function KandidatForm({ rowIndex = null, data = [], canPrivate, o
         <datalist id="kdt-jabatan">{jabList.map(j => <option key={j} value={j} />)}</datalist>
         {canPrivate && !digits(f.nik) && <p className="subtle">NIK belum diisi: kandidat akan ditandai “NIK belum lengkap” sampai HR melengkapinya.</p>}
         {error && <div className="form-error">{error}</div>}
-        <div className="modal-actions"><button type="button" className="btn light" onClick={onClose}>Batal</button><button type="submit" className="btn primary" disabled={busy}>{busy ? 'Menyimpan...' : 'Simpan'}</button></div>
+        {hapusMode && rec ? (
+          <div style={{ border: '1px solid #f1b5b0', background: '#fff5f4', borderRadius: 10, padding: 12, marginTop: 10 }}>
+            <p style={{ margin: '0 0 6px', color: '#b42318' }}><b>Hapus kandidat {f.nama || ''}?</b> Data kandidat beserta NIK dan No. HP-nya terhapus dan tidak bisa dikembalikan. Peserta dengan nama ini di sesi Tes Teori tidak ikut terhapus.</p>
+            <label style={{ display: 'block' }}>Ketik <b>HAPUS</b> untuk melanjutkan
+              <input value={ketik} onChange={e => setKetik(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') e.preventDefault(); }} placeholder="HAPUS" autoComplete="off" style={{ display: 'block', width: '100%', marginTop: 6 }} /></label>
+            <div className="modal-actions" style={{ marginTop: 10 }}>
+              <button type="button" className="btn light" disabled={busy} onClick={() => { setHapusMode(false); setKetik(''); }}>Batal hapus</button>
+              <button type="button" className="btn amber" disabled={busy || ketik.trim().toUpperCase() !== 'HAPUS'} onClick={hapusKandidat}>{busy ? 'Menghapus...' : 'Hapus kandidat'}</button>
+            </div>
+          </div>
+        ) : (
+          <div className="modal-actions" style={{ justifyContent: rec && canPrivate ? 'space-between' : undefined }}>
+            {rec && canPrivate && <button type="button" className="btn light" style={{ color: '#b42318' }} onClick={() => { setHapusMode(true); setKetik(''); setError(''); }}>Hapus kandidat</button>}
+            <span style={{ display: 'flex', gap: 8 }}><button type="button" className="btn light" onClick={onClose}>Batal</button><button type="submit" className="btn primary" disabled={busy}>{busy ? 'Menyimpan...' : 'Simpan'}</button></span>
+          </div>
+        )}
       </>}
     </form>
   </div>;

@@ -163,6 +163,8 @@ function SesiDetail({ s, paket, soal, data, muat, notify, kembali, onChanged }) 
   const sisaSesi = s.status === 'berjalan' ? sisaDetik(s, pk, now) : null;
   const [qr, setQr] = useState('');
   const [besar, setBesar] = useState(false);
+  const [hapusBuka, setHapusBuka] = useState(false);
+  const [ketik, setKetik] = useState('');
   const [peserta, setPeserta] = useState([]);
   const [jawaban, setJawaban] = useState([]);
   const [teks, setTeks] = useState('');
@@ -229,6 +231,16 @@ function SesiDetail({ s, paket, soal, data, muat, notify, kembali, onChanged }) 
     const belumMasuk = hitung.terdaftar;
     if (!window.confirm(`Mulai tes sekarang?${belumMasuk ? `\n\n${belumMasuk} peserta belum masuk. Mereka masih bisa masuk setelah tes dimulai, tetapi waktunya sama dengan peserta lain.` : ''}`)) return;
     aksi(async () => { await ok(supabase.rpc('tes_mulai_sesi', { p_sesi: s.id })); await muat(); }, 'Tes dimulai. Peserta di ruang tunggu langsung melihat soal.');
+  };
+  // Hapus sesi: peserta, jawaban, dan hasil ikut terhapus (cascade di database). Harus mengetik kode sesi.
+  const hapusSesi = () => {
+    if (ketik.trim().toUpperCase() !== String(s.kode).toUpperCase()) return;
+    aksi(async () => {
+      const baris = await ok(supabase.from('tes_sesi').delete().eq('id', s.id).select('id'));
+      if (!baris || !baris.length) throw new Error('Sesi tidak terhapus. Pastikan Anda login sebagai admin.');
+      setHapusBuka(false); setKetik('');
+      await muat(); kembali(); if (onChanged) onChanged();
+    }, `Sesi "${s.judul}" dihapus.`);
   };
   const tutup = () => {
     if (!window.confirm('Tutup sesi ini?\n\nPeserta yang belum selesai akan dinilai dari jawaban yang sudah masuk. Setelah ditutup, skor terbuka untuk HR dan sesi tidak bisa dibuka lagi.')) return;
@@ -312,7 +324,10 @@ function SesiDetail({ s, paket, soal, data, muat, notify, kembali, onChanged }) 
       <section className="panel tr-panel">
         <div className="panel-heading">
           <div><h3>{s.judul}</h3><p className="subtle">Paket: {pk?.nama || '—'} • {pk?.jumlah_soal} soal • {pk?.durasi_menit} menit • nilai lulus {pk?.nilai_lulus}</p></div>
-          <button type="button" className="btn light mini" onClick={kembali}>← Semua sesi</button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="button" className="btn light mini" disabled={s.status === 'berjalan'} title={s.status === 'berjalan' ? 'Tutup sesi dulu sebelum menghapus' : 'Hapus sesi ini'} onClick={() => { setKetik(''); setHapusBuka(true); }} style={{ color: '#b42318' }}>Hapus sesi</button>
+            <button type="button" className="btn light mini" onClick={kembali}>← Semua sesi</button>
+          </div>
         </div>
         <div className="tes-head">
           <div>
@@ -433,6 +448,23 @@ function SesiDetail({ s, paket, soal, data, muat, notify, kembali, onChanged }) 
         </section>
       )}
 
+      {hapusBuka && (
+        <div className="tes-modal-bg" onClick={() => !busy && setHapusBuka(false)} role="alertdialog" aria-modal="true">
+          <div className="tes-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 460, textAlign: 'left' }}>
+            <h3>Hapus sesi ini?</h3>
+            <p><strong>{s.judul}</strong><br /><span className="subtle">Kode {s.kode} • {S_LABEL[s.status]} • {peserta.length} peserta{ditutup ? ` • ${hasil.length} hasil tes` : ''}</span></p>
+            <p style={{ color: '#b42318' }}>Semua peserta, jawaban, dan hasil skor di sesi ini ikut terhapus dan <b>tidak bisa dikembalikan</b>. Kandidat di menu Rekrutmen tidak terhapus.</p>
+            {ditutup && <p><button type="button" className="btn light mini" onClick={unduh}>Unduh hasil (CSV) dulu</button></p>}
+            <label style={{ display: 'block', marginTop: 8 }}>Untuk melanjutkan, ketik kode sesi <b>{s.kode}</b>
+              <input value={ketik} onChange={e => setKetik(e.target.value)} placeholder={s.kode} autoFocus autoComplete="off" style={{ display: 'block', width: '100%', marginTop: 6 }} />
+            </label>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
+              <button type="button" className="btn light" disabled={busy} onClick={() => setHapusBuka(false)}>Batal</button>
+              <button type="button" className="btn amber" disabled={busy || ketik.trim().toUpperCase() !== String(s.kode).toUpperCase()} onClick={hapusSesi}>{busy ? 'Menghapus...' : 'Hapus sesi'}</button>
+            </div>
+          </div>
+        </div>
+      )}
       {besar && (
         <div className="tes-modal-bg" onClick={() => setBesar(false)} role="dialog" aria-modal="true">
           <div className="tes-modal tes-big" onClick={e => e.stopPropagation()}>
