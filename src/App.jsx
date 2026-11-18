@@ -13,6 +13,7 @@ import TesKandidat from './TesKandidat.jsx';
 import { NAV, TAB_LABEL } from './nav.js';
 import { licenseExpiringPeople } from './utils.js';
 import InputData from './InputData.jsx';
+import UnitForm, { UNIT_MODULES } from './UnitForm.jsx';
 import { PAGES } from './Pages.jsx';
 import KandidatForm, { REK, splitRek } from './KandidatForm.jsx';
 
@@ -154,10 +155,17 @@ function parseWorkbookSheet(sheet, moduleKey) {
   const headers = makeHeaders(rows, moduleKey);
   const startAt = specialTna ? 3 : 1;
   const result = [];
+  // Kolom tanpa judul dan tanpa isi sama sekali (di Excel hanya sisa format) tidak ikut diimpor.
+  const barisJudul = (specialTna ? rows[2] : rows[0]) || [];
+  const kolomKosong = headers.map((h, i) => {
+    const tanpaJudul = barisJudul[i] === null || barisJudul[i] === undefined || String(barisJudul[i]).trim() === '';
+    return tanpaJudul && /^Kolom_\d+$/.test(h) && !rows.slice(startAt).some(r => r && r[i] !== null && r[i] !== undefined && r[i] !== '');
+  });
   rows.slice(startAt).forEach((row, index) => {
     if (!row || !row.some((cell) => cell !== null && cell !== undefined && cell !== '')) return;
     const data = {};
     headers.forEach((header, colIndex) => {
+      if (kolomKosong[colIndex]) return;
       const value = row[colIndex];
       data[header] = value instanceof Date ? value.toISOString().slice(0, 10) : (value === undefined ? null : value);
     });
@@ -219,8 +227,9 @@ function DataTablePage({ module, rows, loading, canWrite, onAdd, onEdit, onDelet
 
   
 const columns = useMemo(() => {
+  // Kolom baris pertama didahulukan, lalu kolom yang hanya ada di baris lain (supaya tidak ada kolom yang hilang).
   const dataColumns = rows.length
-    ? Object.keys(rows[0].data || {})
+    ? [...new Set([Object.keys(rows[0].data || {}), ...rows.slice(1).map(r => Object.keys(r.data || {}))].flat())]
     : [];
 
   const normalize = (value) =>
@@ -242,6 +251,16 @@ const columns = useMemo(() => {
     'PC210', 'PC350', 'D85', 'Simpol', 'Simper',
     'Authority', 'Escorting', 'HighRisk',
     'PowerTools', 'Foto'
+  ];
+
+  const unitOrder = [
+    'CN Unit', 'Equipment', 'Model', 'Tahun', 'Remark',
+    'Komisioning', 'Masa Berlaku', 'Keterangan'
+  ];
+
+  const kendaraanOrder = [
+    'CN', 'Jenis', 'No. Polisi', 'Model', 'Tahun',
+    'Pajak', 'STNK', 'KIR', 'Komisioning (Masa Berlaku)', 'Keterangan'
   ];
 
   const contractOrder = [
@@ -413,6 +432,14 @@ const tnaRealisasiOrder = [
     return arrangeColumns(employeeColumnOrder);
   }
 
+  if (moduleName === 'dataunit') {
+    return arrangeColumns(unitOrder);
+  }
+
+  if (moduleName === 'datalvbus') {
+    return arrangeColumns(kendaraanOrder);
+  }
+
   if (moduleName.includes('kontrak')) {
     return arrangeColumns(contractOrder);
   }
@@ -454,6 +481,10 @@ if (moduleName === 'atr' || moduleName === 'dataatr') {
 const visibleColumns = showAllColumns
   ? columns
   : columns.slice(0, 8);
+
+// Tabel unit dan kendaraan: kolom Model dan Keterangan rata kiri, kolom lain rata tengah.
+const isUnitTable = module === 'Data_Unit' || module === 'Data_LV & Bus';
+const alignOf = (col) => (isUnitTable ? (/^(model|keterangan)$/i.test(String(col).trim()) ? 'left' : 'center') : undefined);
 
   
   const filtered = useMemo(() => {
@@ -574,7 +605,7 @@ const visibleColumns = showAllColumns
                 <thead>
                   <tr>
                     {visibleColumns.map(col => (
-  <th key={col} className="wrap-header">
+  <th key={col} className="wrap-header" style={{ textAlign: alignOf(col) }}>
   {col === 'NRP AMODI'
     ? 'AMODI'
     : col === 'Induksi Pasca Cuti (referensi, tidak dihitung)'
@@ -600,12 +631,13 @@ const visibleColumns = showAllColumns
           title={displayValue(row.data?.[col], col)}
           style={{
             textAlign:
-              (module === 'Data_ATR' &&
+              alignOf(col) ??
+              ((module === 'Data_ATR' &&
                 ['JAN', 'FEB', 'MAR', 'APR', 'MEI', 'JUN',
                  'JUL', 'AGU', 'SEP', 'OKT', 'NOV', 'DES', 'YTD']
                   .includes(col.toUpperCase()))
                 ? 'center'
-                : undefined
+                : undefined)
           }}
         >
           {displayValue(row.data?.[col], col)}
@@ -741,6 +773,7 @@ function AppUtama() {
   const [loading, setLoading] = useState(false);
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [modal, setModal] = useState(null);
+  const [unitForm, setUnitForm] = useState(null);
   const [kandidat, setKandidat] = useState(null);
   const [saveBusy, setSaveBusy] = useState(false);
   const [notice, setNotice] = useState('');
@@ -1091,12 +1124,14 @@ const importWorkbook = async (file) => {
   const openAddModal = () => {
     if (activeModule === REK) { setKandidat({ rowIndex: null }); return; }
     if (activeModule === 'Data_Karyawan') { setInputRow(null); openModule('Input', null, 'input'); return; }
+    if (UNIT_MODULES.includes(activeModule)) { setUnitForm({ row: null, module: activeModule }); return; }
     const columns = rows.length ? Object.keys(rows[0].data || {}) : [];
     setModal({ row: null, columns });
   };
   const openEditModal = (row) => {
     if (activeModule === REK) { setKandidat({ rowIndex: row.row_index }); return; }
     if (activeModule === 'Data_Karyawan') { setInputRow(row); openModule('Input', null, 'input'); return; }
+    if (UNIT_MODULES.includes(activeModule)) { setUnitForm({ row, module: activeModule }); return; }
     setModal({ row, columns: Object.keys(row.data || {}) });
   };
 
@@ -1184,7 +1219,7 @@ const saveRecord = async (formData) => {
     </aside>
     <main className="main-area"><header className="topbar"><div className="breadcrumb"><span>PT. RYAN EKA PRATAMA</span><b>/</b><strong>{activeModule==='Settings'?'Pengaturan':curNav?.label || activeModule}</strong></div><div className="topbar-right"><span className="secure-label"><Icon name="lock" size={14}/> INTERNAL</span>{activeModule!=='Settings' && <button className="icon-btn refresh-btn" title="Muat ulang" aria-label="Muat ulang" onClick={()=>['Dashboard','Training','Lisensi'].includes(activeModule)?loadOverview():loadModule(activeModule)}><Icon name="refresh" size={17}/></button>}<ModeToggle appearance={appearance}/><button className={`icon-btn ${activeModule==='Settings'?'active':''}`} title="Pengaturan" aria-label="Pengaturan" onClick={()=>setActiveModule('Settings')}><Icon name="settings" size={17}/></button><div className="top-avatar">{(profile.display_name||'U').slice(0,1).toUpperCase()}</div></div></header>
       {activeModule!=='Settings' && curNav?.modules.length>1 && !(PAGES[activeModule] && !moduleFilter?.raw) && <div className="module-tabs" role="tablist">{curNav.modules.filter(k=>k==='Training'||isAdmin||permissions.some(p=>p.module_key===k&&p.can_read)).map(k=><button key={k} type="button" role="tab" aria-selected={activeModule===k} className={`module-tab ${activeModule===k?'active':''}`} onClick={()=>openModule(k,null,curNav.id)}>{TAB_LABEL[k]||MODULES.find(m=>m[0]===k)?.[1]||k}</button>)}</div>}
-      {activeModule==='Input' ? <InputData key={inputRow?.id||'new'} canPrivate={canEditPrivate} isAdmin={isAdmin} initialRow={inputRow} split={splitEmployeeRecord} toDate={excelSerialToDate} onImport={openImport} onSaved={loadOverview}/> : activeModule==='Settings' ? <SettingsPage appearance={appearance} isAdmin={isAdmin} profile={profile} onNotice={setNotice} onExportAll={exportAllData} exportBusy={exportBusy}/> : activeModule==='Tes' ? <TesHR data={overviewData} onChanged={loadOverview}/> : activeModule==='Lisensi' ? <Lisensi data={overviewData} loading={overviewLoading} canWrite={isAdmin||permissions.some(p=>p.module_key==='Data_Karyawan'&&p.can_write)} preset={moduleFilter} onRefresh={loadOverview} onOpen={openModule}/> : activeModule==='Training' ? <Training data={overviewData} loading={overviewLoading} onRefresh={loadOverview} onOpen={openModule}/> : activeModule==='Dashboard' ? <Dashboard data={overviewData} loading={overviewLoading} hasData={overviewData.length>0} isAdmin={isAdmin} onImport={openImport} onRefresh={loadOverview} onOpen={openModule}/> : (PAGES[activeModule] && !moduleFilter?.raw) ? React.createElement(PAGES[activeModule], { data: overviewData, loading: overviewLoading, onRefresh: loadOverview, onOpen: openModule, onInput: () => { setInputRow(null); openModule('Input', null, 'input'); }, canPrivate: canEditPrivate, canWrite: isAdmin || permissions.some(p => p.module_key === REK && p.can_write), onAddKandidat: () => setKandidat({ rowIndex: null }), onEditKandidat: ri => setKandidat({ rowIndex: ri }) }) : <DataTablePage module={activeModule} rows={rows} loading={loading} canWrite={activeCanWrite} onAdd={openAddModal} onEdit={openEditModal} onDelete={deleteRecord} preset={moduleFilter} onClearPreset={()=>setModuleFilter(null)}/>}
+      {activeModule==='Input' ? <InputData key={inputRow?.id||'new'} canPrivate={canEditPrivate} isAdmin={isAdmin} initialRow={inputRow} split={splitEmployeeRecord} toDate={excelSerialToDate} onImport={openImport} onSaved={loadOverview}/> : activeModule==='Settings' ? <SettingsPage appearance={appearance} isAdmin={isAdmin} profile={profile} onNotice={setNotice} onExportAll={exportAllData} exportBusy={exportBusy}/> : activeModule==='Tes' ? <TesHR data={overviewData} onChanged={loadOverview}/> : activeModule==='Lisensi' ? <Lisensi data={overviewData} loading={overviewLoading} canWrite={isAdmin||permissions.some(p=>p.module_key==='Data_Karyawan'&&p.can_write)} preset={moduleFilter} onRefresh={loadOverview} onOpen={openModule}/> : activeModule==='Training' ? <Training data={overviewData} loading={overviewLoading} onRefresh={loadOverview} onOpen={openModule}/> : activeModule==='Dashboard' ? <Dashboard data={overviewData} loading={overviewLoading} hasData={overviewData.length>0} isAdmin={isAdmin} onImport={openImport} onRefresh={loadOverview} onOpen={openModule}/> : (PAGES[activeModule] && !moduleFilter?.raw) ? React.createElement(PAGES[activeModule], { data: overviewData, loading: overviewLoading, onRefresh: loadOverview, onOpen: openModule, onInput: () => { setInputRow(null); openModule('Input', null, 'input'); }, canPrivate: canEditPrivate, canWrite: isAdmin || permissions.some(p => p.module_key === REK && p.can_write), onAddKandidat: () => setKandidat({ rowIndex: null }), canWriteUnit: isAdmin || permissions.some(p => UNIT_MODULES.includes(p.module_key) && p.can_write), onAddUnit: () => setUnitForm({ row: null, module: activeModule }), onEditKandidat: ri => setKandidat({ rowIndex: ri }) }) : <DataTablePage module={activeModule} rows={rows} loading={loading} canWrite={activeCanWrite} onAdd={openAddModal} onEdit={openEditModal} onDelete={deleteRecord} preset={moduleFilter} onClearPreset={()=>setModuleFilter(null)}/>}
       <footer className="app-footer"><span>PT. RYAN EKA PRATAMA • SITE BONTANG</span><span>VERSI 1.1.0 <i/> PROTECTED WORKSPACE</span></footer>
     </main>
     <input ref={fileInputRef} className="hidden" type="file" accept=".xlsx,.xls" onChange={e=>importWorkbook(e.target.files?.[0])}/>
@@ -1192,6 +1227,17 @@ const saveRecord = async (formData) => {
     {importStatus && !importBusy && <div className="import-status"><div><strong>Status impor</strong><span>{importStatus}</span></div><button onClick={()=>setImportStatus('')}><Icon name="close" size={15}/></button></div>}
     {kandidat && <KandidatForm key={kandidat.rowIndex ?? 'baru'} rowIndex={kandidat.rowIndex} data={overviewData} canPrivate={canEditPrivate} onClose={()=>setKandidat(null)} onSaved={async()=>{ await loadOverview(); if (activeModule === REK) await loadModule(REK); }}/>}
     {modal && <RecordModal module={activeModule} row={modal.row} columns={modal.columns} canEditPrivate={canEditPrivate} onClose={()=>setModal(null)} onSave={saveRecord} busy={saveBusy}/>}
+    {unitForm && <UnitForm key={unitForm.row?.id || 'baru'} row={unitForm.row} module={unitForm.module} data={overviewData} toDate={excelSerialToDate} onClose={() => setUnitForm(null)} onSaved={async (mod, baru, cn) => {
+      setUnitForm(null);
+      setNotice(baru ? `${mod === 'Data_Unit' ? 'Unit' : 'Kendaraan'} ${cn} berhasil ditambahkan.` : 'Data berhasil disimpan.');
+      await loadOverview();
+      if (moduleFilter?.raw && (baru || mod !== activeModule)) {
+        // Sedang di tabel data: tampilkan data yang baru ditambahkan (pindah ke tab jenis yang dipilih bila perlu).
+        const target = String(cn).replace(/\s+/g, '').toLowerCase();
+        openModule(mod, { raw: true, nav: NAV.find(n => n.modules.includes(mod))?.id, label: `${mod === 'Data_Unit' ? 'Unit' : 'Kendaraan'} ${cn}`, test: r => Object.keys(r).some(k => /^cn/i.test(k) && String(r[k] ?? '').replace(/\s+/g, '').toLowerCase() === target) });
+      }
+      await loadModule(moduleFilter?.raw ? mod : activeModule);
+    }} />}
     {notice && <div className="toast"><span>{notice}</span><button onClick={()=>setNotice('')}><Icon name="close" size={14}/></button></div>}
   </div>;
 }

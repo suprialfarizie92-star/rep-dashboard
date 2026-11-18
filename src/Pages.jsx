@@ -177,7 +177,7 @@ function KompetensiPage({ data, loading, onRefresh, onOpen }) {
 }
 
 /* ============ UNIT ============ */
-function UnitPage({ data, loading, onRefresh, onOpen }) {
+function UnitPage({ data, loading, onRefresh, onOpen, canWriteUnit, onAddUnit }) {
   const [win, setWin] = useState(30);
   const { units, veh } = useMemo(() => {
     const t = today();
@@ -197,7 +197,7 @@ function UnitPage({ data, loading, onRefresh, onOpen }) {
   const types = count(units, u => u.eq && String(u.eq)).slice(0, 3);
   const open = (module, nav, f, label) => onOpen(module, RAW(nav, f, label));
   return <Wrap loading={loading} data={data}>
-    <Head title="Unit" sub="Masa berlaku komisioning unit, pajak, STNK, dan KIR kendaraan."><WinSel win={win} setWin={setWin} /><Refresh onRefresh={onRefresh} /></Head>
+    <Head title="Unit" sub="Masa berlaku komisioning unit, pajak, STNK, dan KIR kendaraan.">{canWriteUnit && onAddUnit && <button type="button" className="btn primary" onClick={onAddUnit}><Icon name="plus" size={15} /> Tambah unit</button>}<WinSel win={win} setWin={setWin} /><Refresh onRefresh={onRefresh} /></Head>
     <Cards items={[...types.map(([name, v]) => ({ v: fmt(v, 0), l: name, t: 'blue' })),
       { v: fmt(units.filter(u => u.left !== null && u.left <= win).length, 0), l: 'Unit: komisioning lewat / segera', t: 'amber' },
       { v: fmt(veh.filter(v => v.left !== null && v.left <= win).length, 0), l: 'Kendaraan: dokumen lewat / segera', t: 'red' }]} />
