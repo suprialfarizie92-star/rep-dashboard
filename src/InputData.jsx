@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from './supabase';
 import './inputdata.css';
 
@@ -30,6 +30,25 @@ const OTHER = [F('Keterangan', 'Keterangan'), F('Foto', 'Foto (path file)')];
 const ALL_FIELDS = [...SECTIONS.flatMap(s => s[1]), ...RESIGN, ...LICENSES.map(([k, l]) => F(k, l, { date: 1 })), F('Awal Kontrak', 'Awal kontrak', { date: 1 }), F('Akhir Kontrak', 'Akhir kontrak', { date: 1 }), ...OTHER];
 const DATE_KEYS = ALL_FIELDS.filter(f => f.date).map(f => f.key);
 
+// Foto karyawan disimpan di Supabase Storage (bucket privat). Kolom Foto hanya berisi nama file di bucket itu.
+const FOTO_BUCKET = 'foto-karyawan';
+const FOTO_POLA = /^[A-Za-z0-9_-]+\.jpg$/;
+const kecilkan = (file, maks = 800) => new Promise((resolve, reject) => {
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    URL.revokeObjectURL(url);
+    const skala = Math.min(1, maks / Math.max(img.width, img.height));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(img.width * skala)); c.height = Math.max(1, Math.round(img.height * skala));
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(img, 0, 0, c.width, c.height);
+    c.toBlob(b => (b ? resolve(b) : reject(new Error('Gagal memproses foto.'))), 'image/jpeg', 0.85);
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Format foto tidak didukung. Gunakan JPG atau PNG.')); };
+  img.src = url;
+});
+
 export default function InputData({ canPrivate, isAdmin, initialRow, split, toDate, onImport, onSaved }) {
   const [rows, setRows] = useState([]);
   const [priv, setPriv] = useState({});
@@ -39,6 +58,10 @@ export default function InputData({ canPrivate, isAdmin, initialRow, split, toDa
   const [kontrak, setKontrak] = useState('PKWT');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
+  const [fotoUrl, setFotoUrl] = useState('');
+  const [fotoBusy, setFotoBusy] = useState(false);
+  const fotoSesi = useRef('');
+  const fileRef = useRef(null);
   const isPrivate = useCallback(k => Object.keys(split({ [k]: 1 }).privateData).length > 0, [split]);
 
   const load = useCallback(async () => {
@@ -85,6 +108,38 @@ export default function InputData({ canPrivate, isAdmin, initialRow, split, toDa
   }, [rows, priv]);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  // Pratinjau foto: tautan sementara (1 jam) karena bucket bersifat privat.
+  useEffect(() => {
+    let on = true;
+    const p = String(form.Foto || '').trim();
+    if (!FOTO_POLA.test(p)) { setFotoUrl(''); return undefined; }
+    supabase.storage.from(FOTO_BUCKET).createSignedUrl(p, 3600).then(({ data }) => { if (on) setFotoUrl(data?.signedUrl || ''); }).catch(() => { if (on) setFotoUrl(''); });
+    return () => { on = false; };
+  }, [form.Foto]);
+
+  const pilihFoto = async e => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    const amodi = String(form.AMODI || '').trim();
+    if (!amodi) { setMsg({ err: 'Isi AMODI terlebih dahulu sebelum mengunggah foto.' }); return; }
+    if (!String(file.type || '').startsWith('image/')) { setMsg({ err: 'File harus berupa gambar (JPG atau PNG).' }); return; }
+    if (file.size > 15 * 1024 * 1024) { setMsg({ err: 'Ukuran foto terlalu besar (maksimal 15 MB).' }); return; }
+    setFotoBusy(true); setMsg(null);
+    try {
+      const blob = await kecilkan(file);
+      const path = `${amodi.replace(/[^A-Za-z0-9_-]/g, '_')}-${Date.now()}.jpg`;
+      const up = await supabase.storage.from(FOTO_BUCKET).upload(path, blob, { contentType: 'image/jpeg', cacheControl: '3600' });
+      if (up.error) throw up.error;
+      // Bila sebelumnya sudah mengunggah foto di sesi ini tetapi belum disimpan, hapus yang tidak terpakai.
+      if (fotoSesi.current && fotoSesi.current === String(form.Foto || '').trim()) supabase.storage.from(FOTO_BUCKET).remove([fotoSesi.current]).catch(() => {});
+      fotoSesi.current = path;
+      set('Foto', path);
+      setMsg({ ok: 'Foto berhasil diunggah. Klik "Simpan perubahan" agar foto tersimpan di data karyawan.' });
+    } catch (err) { setMsg({ err: `Gagal mengunggah foto: ${err.message || err}` }); }
+    finally { setFotoBusy(false); }
+  };
   const field = f => {
     if (isPrivate(f.key) && !canPrivate) return null;
     return <label key={f.key} className={`idf${f.wide ? ' wide' : ''}`}><span>{f.label}{f.req ? ' *' : ''}</span>
@@ -96,6 +151,7 @@ export default function InputData({ canPrivate, isAdmin, initialRow, split, toDa
     e.preventDefault(); setMsg(null); setBusy(true);
     try {
       const out = { ...form };
+      const fotoLama = String({ ...(editing?.data || {}), ...(priv[editing?.row_index] || {}) }.Foto || '').trim();
       if (kontrak === 'PKWTT') { out['Awal Kontrak'] = ''; out['Akhir Kontrak'] = ''; }
       CERTS.forEach(([k]) => { if (certs[k] !== isOn(editing?.data?.[k])) out[k] = certs[k] ? CERT_ON : ''; else if (editing) out[k] = editing.data?.[k] ?? ''; });
       const amodi = String(out.AMODI || '').trim();
@@ -125,6 +181,9 @@ export default function InputData({ canPrivate, isAdmin, initialRow, split, toDa
           note += ins.error ? ` Catatan resign belum masuk ke Turnover: ${ins.error.message}` : ' Karyawan juga dicatat di Turnover.';
         }
       }
+      // Foto lama yang diganti atau dihapus ikut dibersihkan dari Storage.
+      if (fotoLama && fotoLama !== String(out.Foto || '').trim() && FOTO_POLA.test(fotoLama)) supabase.storage.from(FOTO_BUCKET).remove([fotoLama]).catch(() => {});
+      fotoSesi.current = '';
       const list = await load();
       const saved = list.find(r => r.row_index === rowIndex);
       setMsg({ ok: note });
@@ -133,6 +192,27 @@ export default function InputData({ canPrivate, isAdmin, initialRow, split, toDa
     } catch (err) { setMsg({ err: err.message || 'Gagal menyimpan data.' }); }
     finally { setBusy(false); }
   };
+
+  const fotoNilai = String(form.Foto || '').trim();
+  const fotoBlok = (isPrivate('Foto') && !canPrivate) ? null : (
+    <div key="Foto" className="idf wide">
+      <span>Foto karyawan</span>
+      <div className="idrow" style={{ alignItems: 'center', gap: 14 }}>
+        <div style={{ width: 96, height: 120, flex: '0 0 auto', borderRadius: 8, overflow: 'hidden', display: 'grid', placeItems: 'center', background: 'rgba(128,128,128,.12)', border: '1px solid rgba(128,128,128,.35)' }}>
+          {fotoUrl ? <img src={fotoUrl} alt="Foto karyawan" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <small className="subtle" style={{ textAlign: 'center', padding: 6 }}>Belum ada foto</small>}
+        </div>
+        <div>
+          <input ref={fileRef} type="file" accept="image/*" hidden onChange={pilihFoto} />
+          <div className="idrow">
+            <button type="button" className="btn light" disabled={fotoBusy} onClick={() => fileRef.current?.click()}>{fotoBusy ? 'Mengunggah...' : (fotoNilai ? 'Ganti foto' : 'Unggah foto')}</button>
+            {fotoNilai && <button type="button" className="btn light" disabled={fotoBusy} onClick={() => set('Foto', '')}>Hapus foto</button>}
+          </div>
+          <p className="subtle">JPG atau PNG. Foto otomatis dikecilkan. Klik "Simpan perubahan" agar tersimpan.</p>
+          {fotoNilai && !FOTO_POLA.test(fotoNilai) && <p className="subtle">Isi lama: {fotoNilai} (bukan dari unggahan). Unggah foto baru untuk menggantinya.</p>}
+        </div>
+      </div>
+    </div>
+  );
 
   return <div className="idpage">
     <div className="idhead"><div><h1>Input data</h1><p className="subtle">Tambah karyawan baru atau perbarui data yang sudah ada.</p></div>
@@ -156,7 +236,7 @@ export default function InputData({ canPrivate, isAdmin, initialRow, split, toDa
         <label key={k} className="idchip"><input type="checkbox" checked={!!certs[k]} onChange={e => setCerts(c => ({ ...c, [k]: e.target.checked }))} /> {l}</label>)}</div></section>
       <section className="idbox"><h2>Masa berlaku lisensi</h2><p className="subtle">Kosongkan tanggal bila karyawan tidak memiliki lisensi tersebut.</p>
         <div className="idgrid">{LICENSES.map(([k, l]) => field(F(k, l, { date: 1 })))}</div></section>
-      <section className="idbox"><h2>Lainnya</h2><div className="idgrid">{OTHER.map(field)}</div></section>
+      <section className="idbox"><h2>Lainnya</h2><div className="idgrid">{OTHER.map(f => (f.key === 'Foto' ? fotoBlok : field(f)))}</div></section>
       {msg?.err && <div className="form-error">{msg.err}</div>}
       {msg?.ok && <div className="idok">{msg.ok}</div>}
       <div className="idrow"><button type="submit" className="btn primary" disabled={busy}>{busy ? 'Menyimpan...' : 'Simpan perubahan'}</button><span className="subtle">Tanda * wajib diisi.</span></div>
