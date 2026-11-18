@@ -26,6 +26,12 @@ function useNow(aktif) {
 }
 const BATAS_MERAH = 300; // detik: sisa waktu di bawah ini tampil merah, dan jumlah pindah tab dari 3 ditandai
 const BATAS_PINDAH = 3;
+const PESAN_CEPAT = [
+  'Tetap berada di halaman tes. Perpindahan halaman Anda tercatat oleh panitia.',
+  'Ini peringatan terakhir. Jika Anda berpindah halaman lagi, hasil tes dapat ditinjau panitia.',
+  'Silakan angkat tangan, panitia akan menghampiri Anda.',
+  'Sisa waktu tes tinggal 10 menit.'
+];
 // Sisa detik; null bila belum bisa dihitung. tambahan = menit tambahan khusus peserta.
 const sisaDetik = (s, pk, now, tambahan = 0) => (s?.mulai_at && pk?.durasi_menit ? Math.round((new Date(s.mulai_at).getTime() + (Number(pk.durasi_menit) + Number(tambahan || 0)) * 60000 - now) / 1000) : null);
 const tgl = v => (v ? new Date(v).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
@@ -164,6 +170,9 @@ function SesiDetail({ s, paket, soal, data, muat, notify, kembali, onChanged }) 
   const [qr, setQr] = useState('');
   const [besar, setBesar] = useState(false);
   const [hapusBuka, setHapusBuka] = useState(false);
+  const [pesanBuka, setPesanBuka] = useState(null); // { untuk: peserta | 'semua' }
+  const [isiPesan, setIsiPesan] = useState('');
+  const [pesanList, setPesanList] = useState([]);
   const [ketik, setKetik] = useState('');
   const [peserta, setPeserta] = useState([]);
   const [jawaban, setJawaban] = useState([]);
@@ -201,12 +210,16 @@ function SesiDetail({ s, paket, soal, data, muat, notify, kembali, onChanged }) 
   const muatPeserta = useCallback(async () => {
     try {
       const rows = await ok(supabase.from('tes_peserta')
-        .select('id,nama,hp4,status,gagal_masuk,tambahan_menit,pindah_tab,mulai_at,selesai_at,soal_urutan,tes_hasil(*)')
+        .select('id,nama,hp4,status,gagal_masuk,tambahan_menit,pindah_tab,masuk_at,mulai_at,selesai_at,soal_urutan,tes_hasil(*)')
         .eq('sesi_id', s.id).order('nama'));
       setPeserta(rows || []);
+      if (s.status === 'berjalan') {
+        // Pesan panitia + status dibaca. Bila fitur belum dipasang di database, diabaikan.
+        try { setPesanList(await ok(supabase.from('tes_pesan').select('id,peserta_id,isi,created_at,tes_pesan_baca(peserta_id)').eq('sesi_id', s.id).order('created_at'))); } catch { setPesanList([]); }
+      }
       setJawaban(ditutup && rows?.length ? await semuaJawaban(rows.map(r => r.id)) : []);
     } catch (e) { notify({ err: e.message }); }
-  }, [s.id, ditutup, notify]);
+  }, [s.id, s.status, ditutup, notify]);
 
   useEffect(() => {
     muatPeserta();
@@ -288,9 +301,33 @@ function SesiDetail({ s, paket, soal, data, muat, notify, kembali, onChanged }) 
     aksi(async () => { await ok(supabase.rpc('tes_tambah_waktu', { p_peserta: p.id, p_menit: Math.round(m) })); await muatPeserta(); }, `Waktu ${p.nama} ditambah ${Math.round(m)} menit.`);
   };
   const bukaKunci = p => aksi(async () => { await ok(supabase.from('tes_peserta').update({ gagal_masuk: 0 }).eq('id', p.id)); await muatPeserta(); }, `Akses ${p.nama} dibuka kembali.`);
+  const kirimPesan = () => {
+    const isi = isiPesan.trim();
+    if (!isi || !pesanBuka) return;
+    const untuk = pesanBuka.untuk;
+    aksi(async () => {
+      await ok(supabase.from('tes_pesan').insert({ sesi_id: s.id, peserta_id: untuk === 'semua' ? null : untuk.id, isi }));
+      setPesanBuka(null); setIsiPesan('');
+      await muatPeserta();
+    }, untuk === 'semua' ? 'Pesan dikirim ke semua peserta.' : `Pesan dikirim ke ${untuk.nama}.`);
+  };
+  // Status pesan terakhir untuk satu peserta (pesan pribadi atau pesan untuk semua yang dikirim setelah dia masuk).
+  const statusPesan = p => {
+    const m = [...pesanList].reverse().find(x => x.peserta_id === p.id || (!x.peserta_id && (!p.masuk_at || x.created_at >= p.masuk_at)));
+    if (!m) return null;
+    return (m.tes_pesan_baca || []).some(b => b.peserta_id === p.id) ? 'dibaca' : 'belum';
+  };
   const hapus = p => {
-    if (!window.confirm(`Hapus ${p.nama} dari sesi ini?`)) return;
-    aksi(async () => { await ok(supabase.from('tes_peserta').delete().eq('id', p.id)); await muatPeserta(); }, `${p.nama} dihapus.`);
+    const berjalan = s.status === 'berjalan';
+    if (!window.confirm(berjalan
+      ? `Hapus ${p.nama} dari sesi ini?\n\n${p.nama} belum login, jadi tidak ada jawaban yang hilang. Peserta yang dihapus tidak bisa masuk lagi ke sesi ini.`
+      : `Hapus ${p.nama} dari sesi ini?`)) return;
+    aksi(async () => {
+      // Hanya peserta yang belum login (status "terdaftar") yang boleh dihapus.
+      const terhapus = await ok(supabase.from('tes_peserta').delete().eq('id', p.id).eq('status', 'terdaftar').select('id'));
+      await muatPeserta();
+      if (!terhapus?.length) throw new Error(`${p.nama} tidak bisa dihapus. Mungkin sudah login atau sedang mengerjakan.`);
+    }, `${p.nama} dihapus.`);
   };
   const salin = async () => { try { await navigator.clipboard.writeText(url); notify({ ok: 'Link tes disalin.' }); } catch { notify({ err: 'Tidak bisa menyalin. Salin manual dari kotak di bawah QR.' }); } };
 
@@ -389,7 +426,7 @@ function SesiDetail({ s, paket, soal, data, muat, notify, kembali, onChanged }) 
         )}
 
         <section className="panel tr-panel" style={ditutup ? { gridColumn: '1 / -1' } : undefined}>
-          <div className="panel-heading"><div><h3>{ditutup ? 'Hasil tes' : 'Peserta dan status'}</h3><p className="subtle">{ditutup ? 'Diurutkan dari skor tertinggi.' : 'Diperbarui otomatis tiap 5 detik. Skor belum ditampilkan.'}</p></div></div>
+          <div className="panel-heading"><div><h3>{ditutup ? 'Hasil tes' : 'Peserta dan status'}</h3><p className="subtle">{ditutup ? 'Diurutkan dari skor tertinggi.' : 'Diperbarui otomatis tiap 5 detik. Skor belum ditampilkan.'}</p></div>{!ditutup && s.status === 'berjalan' && <button type="button" className="btn light mini" onClick={() => { setIsiPesan(''); setPesanBuka({ untuk: 'semua' }); }}>Pesan ke semua</button>}</div>
           <div className="tr-scroll">
             <table className="ttable">
               <thead>
@@ -421,8 +458,10 @@ function SesiDetail({ s, paket, soal, data, muat, notify, kembali, onChanged }) 
                     <td>
                       <div className="tes-actions">
                         {!ditutup && p.status !== 'selesai' && s.status === 'berjalan' && <button type="button" className="btn light mini" onClick={() => tambahWaktu(p)}>+ Waktu</button>}
+                        {!ditutup && p.status !== 'selesai' && s.status === 'berjalan' && p.status !== 'terdaftar' && <button type="button" className={`btn ${p.pindah_tab >= BATAS_PINDAH ? 'amber' : 'light'} mini`} onClick={() => { setIsiPesan(''); setPesanBuka({ untuk: p }); }}>Pesan</button>}
+                        {!ditutup && s.status === 'berjalan' && statusPesan(p) && <small className="tes-mini" style={{ alignSelf: 'center' }}>{statusPesan(p) === 'dibaca' ? 'Pesan dibaca' : 'Pesan belum dibaca'}</small>}
                         {!ditutup && p.gagal_masuk >= 5 && <button type="button" className="btn amber mini" onClick={() => bukaKunci(p)}>Buka kunci</button>}
-                        {s.status === 'menunggu' && <button type="button" className="btn light mini" onClick={() => hapus(p)}>Hapus</button>}
+                        {(s.status === 'menunggu' || (s.status === 'berjalan' && p.status === 'terdaftar')) && <button type="button" className="btn light mini" onClick={() => hapus(p)}>Hapus</button>}
                       </div>
                     </td>
                   </tr>
@@ -448,6 +487,23 @@ function SesiDetail({ s, paket, soal, data, muat, notify, kembali, onChanged }) 
         </section>
       )}
 
+      {pesanBuka && (
+        <div className="tes-modal-bg" onClick={() => !busy && setPesanBuka(null)} role="dialog" aria-modal="true">
+          <div className="tes-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 480, textAlign: 'left' }}>
+            <h3>{pesanBuka.untuk === 'semua' ? 'Pesan ke semua peserta' : `Pesan untuk ${pesanBuka.untuk.nama}`}</h3>
+            <p className="subtle">Pesan langsung muncul di layar HP peserta dan harus dibaca sebelum mereka melanjutkan tes.{pesanBuka.untuk !== 'semua' && pesanBuka.untuk.pindah_tab >= BATAS_PINDAH ? ` ${pesanBuka.untuk.nama} sudah berpindah halaman ${pesanBuka.untuk.pindah_tab} kali.` : ''}</p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '8px 0' }}>
+              {PESAN_CEPAT.map(t => <button key={t} type="button" className="btn light mini" onClick={() => setIsiPesan(t)}>{t.length > 38 ? `${t.slice(0, 38)}…` : t}</button>)}
+            </div>
+            <textarea value={isiPesan} onChange={e => setIsiPesan(e.target.value.slice(0, 500))} placeholder="Tulis pesan untuk peserta..." rows={4} autoFocus style={{ display: 'block', width: '100%' }} />
+            <small className="tes-mini">{isiPesan.length}/500</small>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
+              <button type="button" className="btn light" disabled={busy} onClick={() => setPesanBuka(null)}>Batal</button>
+              <button type="button" className="btn primary" disabled={busy || !isiPesan.trim()} onClick={kirimPesan}>{busy ? 'Mengirim...' : 'Kirim pesan'}</button>
+            </div>
+          </div>
+        </div>
+      )}
       {hapusBuka && (
         <div className="tes-modal-bg" onClick={() => !busy && setHapusBuka(false)} role="alertdialog" aria-modal="true">
           <div className="tes-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 460, textAlign: 'left' }}>

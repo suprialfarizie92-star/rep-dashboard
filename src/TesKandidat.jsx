@@ -46,6 +46,8 @@ export default function TesKandidat() {
   const [pindah, setPindah] = useState(false);
   const [kali, setKali] = useState(() => Number(store.get(KEY_PINDAH)) || 0);
   const [peringatan, setPeringatan] = useState(0);
+  const [pesanMasuk, setPesanMasuk] = useState([]);
+  const [siapPesan, setSiapPesan] = useState(false);
   const [siapTutup, setSiapTutup] = useState(false);
   const [konfirmasi, setKonfirmasi] = useState(false);
 
@@ -54,6 +56,7 @@ export default function TesKandidat() {
   const pending = useRef(new Map());
   const saving = useRef(false);
   const finishing = useRef(false);
+  const pesanSeen = useRef(new Set());
 
   const akhiri = useCallback(() => {
     store.del(KEY); store.del(KEY_NAMA); store.del(KEY_PINDAH);
@@ -196,6 +199,39 @@ export default function TesKandidat() {
     return () => clearTimeout(id);
   }, [pindah]);
 
+  // Pesan dari panitia: dicek tiap 5 detik selama tes berjalan, lalu tampil layar penuh.
+  useEffect(() => {
+    if (step !== 'soal') return undefined;
+    let stop = false;
+    const cek = async () => {
+      try {
+        const r = await rpc('tes_ambil_pesan', { p_token: tokenRef.current });
+        if (stop || !r?.ok || !Array.isArray(r.pesan)) return;
+        const baru = r.pesan.filter(m => !pesanSeen.current.has(m.id));
+        if (!baru.length) return;
+        baru.forEach(m => pesanSeen.current.add(m.id));
+        setPesanMasuk(q => [...q, ...baru]);
+        try { if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } catch { /* abaikan */ }
+      } catch { /* coba lagi pada putaran berikutnya */ }
+    };
+    cek();
+    const id = setInterval(cek, 5000);
+    return () => { stop = true; clearInterval(id); };
+  }, [step]);
+  const pesanId = pesanMasuk[0]?.id;
+  useEffect(() => {
+    setSiapPesan(false);
+    if (!pesanId) return undefined;
+    const id = setTimeout(() => setSiapPesan(true), TAHAN_BACA_DETIK * 1000);
+    return () => clearTimeout(id);
+  }, [pesanId]);
+  const tutupPesan = () => {
+    const m = pesanMasuk[0];
+    if (!m) return;
+    setPesanMasuk(q => q.slice(1));
+    rpc('tes_baca_pesan', { p_token: tokenRef.current, p_pesan: m.id }).catch(() => { pesanSeen.current.delete(m.id); });
+  };
+
   const masuk = async e => {
     e.preventDefault();
     if (!pilih) { setErr('Pilih nama Anda terlebih dahulu.'); return; }
@@ -312,6 +348,16 @@ export default function TesKandidat() {
                   <p>Anda sudah meninggalkan halaman tes sebanyak <b>{peringatan} kali</b>. Setiap perpindahan dicatat dan dapat dilihat petugas HR.</p>
                   <p>Tetaplah di halaman ini sampai tes selesai. Jangan membuka aplikasi atau tab lain.</p>
                   <button type="button" className="tk-btn" disabled={!siapTutup} onClick={() => setPeringatan(0)}>{siapTutup ? 'Saya mengerti' : 'Harap baca peringatan ini...'}</button>
+                </div>
+              </div>
+            )}
+
+            {pesanMasuk.length > 0 && (
+              <div className="tk-modal" role="alertdialog" aria-modal="true">
+                <div className="tk-card">
+                  <h1>Pesan dari panitia</h1>
+                  <p style={{ whiteSpace: 'pre-wrap' }}>{pesanMasuk[0].isi}</p>
+                  <button type="button" className="tk-btn" disabled={!siapPesan} onClick={tutupPesan}>{siapPesan ? 'Saya mengerti' : 'Harap baca pesan ini...'}</button>
                 </div>
               </div>
             )}
