@@ -61,27 +61,30 @@ export default function InputData({ canPrivate, isAdmin, initialRow, split, toDa
   const [fotoUrl, setFotoUrl] = useState('');
   const [fotoBusy, setFotoBusy] = useState(false);
   const fotoSesi = useRef('');
+  const privRef = useRef({});
+  const initForm = useRef({});
   const fileRef = useRef(null);
   const isPrivate = useCallback(k => Object.keys(split({ [k]: 1 }).privateData).length > 0, [split]);
 
   const load = useCallback(async () => {
     const a = await supabase.from('app_data').select('id,row_index,data').eq('module', 'Data_Karyawan').order('row_index', { ascending: true }).range(0, 4999);
     if (a.error) { setMsg({ err: `Gagal memuat data: ${a.error.message}` }); return []; }
+    // Semua data karyawan (termasuk data pribadi) kini disimpan di satu tempat: app_data.
     const map = {};
-    if (canPrivate) {
-      const b = await supabase.from('app_private_data').select('row_index,data').eq('module', 'Data_Karyawan').range(0, 4999);
-      (b.data || []).forEach(r => { map[r.row_index] = r.data || {}; });
-    }
+    privRef.current = map;
     setRows(a.data || []); setPriv(map);
     return a.data || [];
   }, [canPrivate]);
 
   const fill = useCallback((row, privMap) => {
     const base = { ...(row?.data || {}), ...(privMap?.[row?.row_index] || {}) };
+    const akhirAsli = String(base['Akhir Kontrak'] ?? '').trim();
     DATE_KEYS.forEach(k => { base[k] = toDate(base[k]) || ''; });
+    initForm.current = base;
     setForm(base);
     setCerts(Object.fromEntries(CERTS.map(([k]) => [k, isOn(row?.data?.[k])])));
-    setKontrak(row ? (base['Akhir Kontrak'] ? 'PKWT' : 'PKWTT') : 'PKWT');
+    // Karyawan tetap di data ditulis "PKWTT" (teks) di kolom kontrak, bukan tanggal.
+    setKontrak(row ? (akhirAsli && !/pkwtt|tetap|permanen/i.test(akhirAsli) ? 'PKWT' : 'PKWTT') : 'PKWT');
     setSel(row ? row.id : '');
     setMsg(null);
   }, [toDate]);
@@ -90,7 +93,7 @@ export default function InputData({ canPrivate, isAdmin, initialRow, split, toDa
     const list = await load();
     if (initialRow) {
       const r = list.find(x => x.id === initialRow.id);
-      if (r) fill(r, null);
+      if (r) fill(r, privRef.current);
     }
   })(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -152,13 +155,23 @@ export default function InputData({ canPrivate, isAdmin, initialRow, split, toDa
     try {
       const out = { ...form };
       const fotoLama = String({ ...(editing?.data || {}), ...(priv[editing?.row_index] || {}) }.Foto || '').trim();
-      if (kontrak === 'PKWTT') { out['Awal Kontrak'] = ''; out['Akhir Kontrak'] = ''; }
+      // Pola data: karyawan tetap = teks "PKWTT" di kolom kontrak (bukan kosong). Isi asli yang bukan tanggal biasa tidak dihapus.
+      const asli = { ...(editing?.data || {}), ...(priv[editing?.row_index] || {}) };
+      const awalAsli = String(asli['Awal Kontrak'] ?? '').trim();
+      const akhirAsli = String(asli['Akhir Kontrak'] ?? '').trim();
+      const teksTetap = s => /pkwtt|tetap|permanen/i.test(s);
+      if (kontrak === 'PKWTT') {
+        out['Akhir Kontrak'] = 'PKWTT';
+        out['Awal Kontrak'] = awalAsli || 'PKWTT';
+      } else {
+        if (!out['Awal Kontrak'] && awalAsli && !toDate(awalAsli) && !teksTetap(awalAsli)) out['Awal Kontrak'] = awalAsli;
+        if (!out['Akhir Kontrak'] && akhirAsli && !toDate(akhirAsli) && !teksTetap(akhirAsli)) out['Akhir Kontrak'] = akhirAsli;
+      }
       CERTS.forEach(([k]) => { if (certs[k] !== isOn(editing?.data?.[k])) out[k] = certs[k] ? CERT_ON : ''; else if (editing) out[k] = editing.data?.[k] ?? ''; });
       const amodi = String(out.AMODI || '').trim();
       if (!amodi || !String(out.Nama || '').trim() || !String(out.Jabatan || '').trim()) throw new Error('AMODI, nama, dan jabatan wajib diisi.');
       if (!editing && rows.some(r => String(r.data?.AMODI || '').trim().toLowerCase() === amodi.toLowerCase())) throw new Error('AMODI sudah dipakai karyawan lain.');
-      const { publicData, privateData } = split(out);
-      const pub = canPrivate ? publicData : out;
+      const pub = out; // semua isian disimpan di app_data
       let rowIndex = editing?.row_index;
       if (editing) {
         const r = await supabase.from('app_data').update({ data: pub }).eq('id', editing.id);
@@ -166,10 +179,6 @@ export default function InputData({ canPrivate, isAdmin, initialRow, split, toDa
       } else {
         rowIndex = rows.reduce((m, r) => Math.max(m, Number(r.row_index) || 0), 0) + 1;
         const r = await supabase.from('app_data').insert({ module: 'Data_Karyawan', row_index: rowIndex, data: pub });
-        if (r.error) throw r.error;
-      }
-      if (canPrivate) {
-        const r = await supabase.from('app_private_data').upsert({ module: 'Data_Karyawan', row_index: rowIndex, data: privateData }, { onConflict: 'module,row_index' });
         if (r.error) throw r.error;
       }
       let note = 'Data berhasil disimpan.';

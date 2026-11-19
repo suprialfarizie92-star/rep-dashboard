@@ -257,7 +257,7 @@ function TurnoverPage({ data, loading, onRefresh, onInput }) {
     const active = emp.filter(r => !val(r, 'Tanggal Resign')).length;
     const masuk = emp.filter(r => yearOf(val(r, 'Tanggal Masuk')) === y).map((r, i) => {
       const d = toDate(val(r, 'Tanggal Masuk')); const out = toDate(val(r, 'Tanggal Resign'));
-      return { k: i, d, nama: val(r, 'Nama', 'NAMA'), id: val(r, 'AMODI', 'NRP'), jab: val(r, 'Jabatan'), st: val(r, 'Status Karyawan'), pkwt: !!val(r, 'Akhir Kontrak'), mk: masaKerja(d, out || t), out: !!out };
+      return { k: i, d, nama: val(r, 'Nama', 'NAMA'), id: val(r, 'AMODI', 'NRP'), jab: val(r, 'Jabatan'), st: val(r, 'Status Karyawan'), pkwt: !!val(r, 'Akhir Kontrak') && !/pkwtt|tetap|permanen/i.test(String(val(r, 'Akhir Kontrak'))), mk: masaKerja(d, out || t), out: !!out };
     }).sort((a, b) => b.d - a.d);
     const keluar = res.filter(r => yearOf(val(r, 'Tanggal Resign')) === y).map((r, i) => ({ k: i, d: toDate(val(r, 'Tanggal Resign')), nama: val(r, 'Nama', 'NAMA'), id: val(r, 'AMODI', 'NRP'), jab: val(r, 'Jabatan'), jenis: val(r, 'Jenis'), ket: val(r, 'Keterangan') })).sort((a, b) => b.d - a.d);
     let awal = active - masuk.length + keluar.length; const head = awal;
@@ -360,18 +360,9 @@ const filled = v => v !== undefined && v !== null && String(v).trim() !== '';
 
 function RekrutmenPage({ data, loading, onRefresh, onOpen, canPrivate, canWrite, onAddKandidat, onEditKandidat }) {
   const [tab, setTab] = useState('semua'); const [q, setQ] = useState('');
-  // NIK lengkap hanya dimuat untuk admin/HR (database menolak role lain)
   const [dari, setDari] = useState(''); const [sampai, setSampai] = useState('');
-  const [priv, setPriv] = useState({});
-  useEffect(() => {
-    if (!canPrivate) { setPriv({}); return undefined; }
-    let live = true;
-    supabase.from('app_private_data').select('row_index,data').eq('module', 'Data_Rekrutmen').range(0, 4999).then(({ data: d, error }) => {
-      if (!live || error) return;
-      const m = {}; (d || []).forEach(r => { m[r.row_index] = r.data || {}; }); setPriv(m);
-    });
-    return () => { live = false; };
-  }, [canPrivate, data]);
+  // NIK kandidat kini ada di data umum (Data_Rekrutmen), tidak lagi di tabel terpisah.
+  const priv = useMemo(() => { const m = {}; data.filter(r => r.module === 'Data_Rekrutmen').forEach(r => { m[r.row_index] = r.data || {}; }); return m; }, [data]);
   const R = useMemo(() => {
     const recRows = data.filter(x => x.module === 'Data_Rekrutmen');
     const rec = recRows.map(x => x.data || {});
@@ -407,8 +398,8 @@ function RekrutmenPage({ data, loading, onRefresh, onOpen, canPrivate, canWrite,
   const { rows, stages, sc, needs } = R;
   const offers = sc('Offering Letter'); const diterima = rows.filter(x => x.done).length;
   const needle = norm(q);
-  const nikOf = x => (canPrivate ? digits(getKey(priv[x.ri] || {}, 'NIK')) : '');
-  const tanpaNik = rows.filter(x => canPrivate && !nikOf(x)).length;
+  const nikOf = x => digits(getKey(priv[x.ri] || {}, 'NIK'));
+  const tanpaNik = rows.filter(x => !nikOf(x)).length;
   const inTab = x => (tab === 'semua' || (tab === 'proses' ? R.proses(x) : tab === 'diterima' ? x.done : tab === 'nik' ? !nikOf(x) : x.no));
   const tglDari = dari ? new Date(`${dari}T00:00:00`) : null; const tglSampai = sampai ? new Date(`${sampai}T23:59:59`) : null;
   const inTgl = x => (!tglDari && !tglSampai) || (x.lamar && (!tglDari || x.lamar >= tglDari) && (!tglSampai || x.lamar <= tglSampai));
@@ -436,7 +427,7 @@ function RekrutmenPage({ data, loading, onRefresh, onOpen, canPrivate, canWrite,
       <Tbl limit0={10} rows={R.tth} cols={[{ h: 'Jabatan', r: x => x.jab }, { h: 'Diterima', num: 1, r: x => x.n }, { h: 'Rata-rata (hari)', num: 1, r: x => fmt(x.avg, 1) }, { h: 'Tercepat', num: 1, r: x => x.min }, { h: 'Terlama', num: 1, r: x => x.max }]} />
     </Panel>
     <Panel title="Daftar kandidat" sub="Klik baris untuk mengubah hasil, tahap, atau tanggal.">
-      <Bar q={q} setQ={setQ} ph={canPrivate ? 'Cari nama, NIK, jabatan, sumber' : 'Cari nama, jabatan, sumber'} tab={tab} setTab={setTab} tabs={[['semua', 'Semua'], ['proses', 'Proses'], ['diterima', 'Diterima'], ['ditolak', 'Ditolak'], ...(canPrivate ? [['nik', `NIK belum lengkap (${tanpaNik})`]] : [])]} total={`${list.length} kandidat`} />
+      <Bar q={q} setQ={setQ} ph="Cari nama, NIK, jabatan, sumber" tab={tab} setTab={setTab} tabs={[['semua', 'Semua'], ['proses', 'Proses'], ['diterima', 'Diterima'], ['ditolak', 'Ditolak'], ['nik', `NIK belum lengkap (${tanpaNik})`]]} total={`${list.length} kandidat`} />
       <div className="lic-bar" style={{ marginTop: 8 }}>
         <label className="subtle" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>Tanggal lamar dari <input type="date" className="dash-select" value={dari} max={sampai || undefined} onChange={e => setDari(e.target.value)} /></label>
         <label className="subtle" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>sampai <input type="date" className="dash-select" value={sampai} min={dari || undefined} onChange={e => setSampai(e.target.value)} /></label>

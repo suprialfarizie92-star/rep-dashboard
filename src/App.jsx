@@ -17,11 +17,9 @@ import UnitForm, { UNIT_MODULES } from './UnitForm.jsx';
 import { PAGES } from './Pages.jsx';
 import KandidatForm, { REK, splitRek } from './KandidatForm.jsx';
 
-const PRIVATE_EMPLOYEE_FIELDS = new Set([
-  'tempat lahir', 'tanggal lahir', 'jenis kelamin', 'status', 'agama', 'pendidikan',
-  'email', 'gol. darah', 'alamat', 'ibu', 'istri', 'domisili', 'ring', 'hp istri',
-  'kontak darurat', 'nik', 'cp', 'npwp', 'bpjs tk', 'bpjs kes', 'foto', 'no. hp', 'no hp', 'nomor hp'
-]);
+// Data karyawan tidak lagi dipisah menjadi data pribadi: semua kolom disimpan di app_data dan tampil di tabel.
+// (Daftar kolom pribadi lama dikosongkan; data pelamar di Rekrutmen tetap memakai pemisahan sendiri.)
+const PRIVATE_EMPLOYEE_FIELDS = new Set([]);
 
 const DATE_FIELD = /(tanggal|date|expired|berlaku|komisioning|pajak|stnk|kir|lahir|resign|due)/i;
 
@@ -484,7 +482,13 @@ const visibleColumns = showAllColumns
 
 // Tabel unit dan kendaraan: kolom Model dan Keterangan rata kiri, kolom lain rata tengah.
 const isUnitTable = module === 'Data_Unit' || module === 'Data_LV & Bus';
-const alignOf = (col) => (isUnitTable ? (/^(model|keterangan)$/i.test(String(col).trim()) ? 'left' : 'center') : undefined);
+const isKaryawanTable = module === 'Data_Karyawan';
+const alignOf = (col) => {
+  if (isUnitTable) return /^(model|keterangan)$/i.test(String(col).trim()) ? 'left' : 'center';
+  // Data karyawan: kolom teks panjang rata kiri, kolom lain rata tengah.
+  if (isKaryawanTable) return /^(nama|jabatan|departemen|department|departement|tempat lahir|email|alamat|ibu|istri|domisili)$/i.test(String(col).trim()) ? 'left' : 'center';
+  return undefined;
+};
 
   
   const filtered = useMemo(() => {
@@ -936,15 +940,10 @@ const loadModule = useCallback(async (moduleKey) => {
 
   let out = data || [];
   if (moduleKey === REK && out.length) {
-    let map = {};
-    if (canEditPrivate) {
-      const pv = await supabase.from('app_private_data').select('row_index,data').eq('module', REK).range(0, 4999);
-      (pv.data || []).forEach(r => { map[r.row_index] = r.data || {}; });
-    }
     out = out.map(r => {
       const d = { ...(r.data || {}) };
       Object.keys(d).forEach(k => { if (k.trim().toLowerCase() === 'id') delete d[k]; });
-      return { ...r, data: canEditPrivate ? { NIK: '', 'No. HP': '', ...d, ...(map[r.row_index] || {}) } : d };
+      return { ...r, data: { NIK: '', 'No. HP': '', ...d } };
     });
   }
   setRows(out);
@@ -969,10 +968,6 @@ const loadModule = useCallback(async (moduleKey) => {
         if (!changedModule) return;
         if (changedModule === activeModule) loadModule(activeModule);
         loadOverview();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_private_data' }, payload => {
-        const changedModule = payload.new?.module || payload.old?.module;
-        if (changedModule === activeModule) loadModule(activeModule);
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -1056,17 +1051,6 @@ const importWorkbook = async (file) => {
         }
       }
 
-      // Rekrutmen: NIK dan No. HP dari Excel disimpan ke tabel privat (hanya baris yang berisi nilai)
-      if (isRek) {
-        const privRows = parsed.map(record => ({ module: moduleKey, row_index: record.row_index, data: splitRek(record.data).priv, updated_at: new Date().toISOString() }))
-          .map(r => ({ ...r, data: Object.fromEntries(Object.entries(r.data).filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== '')) }))
-          .filter(r => Object.keys(r.data).length);
-        for (let i = 0; i < privRows.length; i += 100) {
-          const { error } = await supabase.from('app_private_data').upsert(privRows.slice(i, i + 100), { onConflict: 'module,row_index' });
-          if (error) throw new Error(`${moduleKey}: gagal menyimpan NIK/No. HP. ${error.message}`);
-        }
-      }
-
       // Setelah data baru berhasil disimpan, bersihkan baris lama
       const { data: existingRows, error: readError } = await supabase
         .from('app_data')
@@ -1094,8 +1078,6 @@ const importWorkbook = async (file) => {
           throw new Error(`${moduleKey}: gagal membersihkan baris lama. ${error.message}`);
         }
       }
-
-      if (isRek && staleIndexes.length) await supabase.from('app_private_data').delete().eq('module', moduleKey).in('row_index', staleIndexes);
 
       completed += 1;
     }
@@ -1189,7 +1171,6 @@ const saveRecord = async (formData) => {
     const { error } = await supabase.from('app_data').delete().eq('id', row.id);
     if (error) setNotice(`Gagal menghapus: ${error.message}`);
     else {
-      if (activeModule === 'Data_Karyawan' || activeModule === REK) await supabase.from('app_private_data').delete().eq('module', activeModule).eq('row_index', row.row_index);
       setNotice('Data berhasil dihapus.'); await loadModule(activeModule); await loadOverview();
     }
   };

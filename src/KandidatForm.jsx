@@ -4,7 +4,7 @@ import { supabase } from './supabase';
 import { DAY, toDate } from './utils.js';
 
 // Form tambah / ubah kandidat Rekrutmen.
-// NIK dan No. HP lengkap disimpan di app_private_data (hanya admin/HR). Data lain di app_data.
+// Semua data kandidat (termasuk NIK dan No. HP) disimpan di app_data.
 
 export const REK = 'Data_Rekrutmen';
 export const SUMBER = ['Job Portal', 'Referensi Karyawan', 'Website Perusahaan', 'Media Sosial', 'Lainnya'];
@@ -21,11 +21,8 @@ export const K = {
 const nk = s => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const PRIV = new Set(['nik', 'nohp', 'nomorhp', 'hp', 'ktp']);
 export const isPrivKey = k => PRIV.has(nk(k));
-export const splitRek = rec => {
-  const pub = {}; const priv = {};
-  Object.entries(rec || {}).forEach(([k, v]) => { (isPrivKey(k) ? priv : pub)[k] = v; });
-  return { pub, priv };
-};
+// Tidak ada lagi pemisahan data pribadi: semua kolom masuk ke data umum.
+export const splitRek = rec => ({ pub: { ...(rec || {}) }, priv: {} });
 export const getKey = (d, name) => { const k = Object.keys(d || {}).find(x => nk(x) === nk(name)); return k === undefined ? undefined : d[k]; };
 export const digits = s => String(s ?? '').replace(/\D/g, '');
 
@@ -43,7 +40,6 @@ export default function KandidatForm({ rowIndex = null, data = [], canPrivate, o
   const [rec, setRec] = useState(null); // baris asli (id, row_index, data) saat mengubah
   const [hapusMode, setHapusMode] = useState(false);
   const [ketik, setKetik] = useState('');
-  const [priv, setPriv] = useState({});
   const [f, setF] = useState({ nama: '', jab: '', sumber: SUMBER[0], lamar: todayIso(), tahap: TAHAP[0], hasil: 'Proses', alasan: '', detail: '', terima: '', catatan: '', nik: '', hp: '' });
   const set = (k, v) => setF(x => ({ ...x, [k]: v }));
 
@@ -67,16 +63,11 @@ export default function KandidatForm({ rowIndex = null, data = [], canPrivate, o
       const a = await supabase.from('app_data').select('id,row_index,data').eq('module', REK).eq('row_index', rowIndex).maybeSingle();
       if (!live) return;
       if (a.error || !a.data) { setError(a.error ? `Gagal memuat data: ${a.error.message}` : 'Data kandidat tidak ditemukan.'); setLoading(false); return; }
-      let p = {};
-      if (canPrivate) {
-        const b = await supabase.from('app_private_data').select('data').eq('module', REK).eq('row_index', rowIndex).maybeSingle();
-        p = b.data?.data || {};
-      }
       if (!live) return;
       const d = a.data.data || {};
-      const merged = { ...d, ...p };
+      const merged = d;
       const alasan = String(getKey(d, K.alasan) ?? '');
-      setRec(a.data); setPriv(p);
+      setRec(a.data);
       setF({
         nama: String(getKey(d, K.nama) ?? ''), jab: String(getKey(d, K.jab) ?? ''), sumber: String(getKey(d, K.sumber) ?? '') || SUMBER[0],
         lamar: iso(getKey(d, K.lamar)), tahap: String(getKey(d, K.tahap) ?? '') || TAHAP[0], hasil: String(getKey(d, K.hasil) ?? '') || 'Proses',
@@ -86,7 +77,7 @@ export default function KandidatForm({ rowIndex = null, data = [], canPrivate, o
       setLoading(false);
     })();
     return () => { live = false; };
-  }, [rowIndex, canPrivate]);
+  }, [rowIndex]);
 
   const ditolak = /tolak|reject|gagal/i.test(f.hasil);
   const diterima = /diterima|hired|join/i.test(f.hasil);
@@ -99,14 +90,14 @@ export default function KandidatForm({ rowIndex = null, data = [], canPrivate, o
     if (!nama) { setError('Nama kandidat wajib diisi.'); return; }
     if (!jab) { setError('Jabatan yang dilamar wajib diisi.'); return; }
     const nik = digits(f.nik);
-    if (canPrivate && nik && nik.length !== 16) { setError('NIK harus 16 digit angka. Kosongkan dulu bila belum ada.'); return; }
+    if (nik && nik.length !== 16) { setError('NIK harus 16 digit angka. Kosongkan dulu bila belum ada.'); return; }
     if (ditolak && !f.alasan) { setError('Pilih alasan penolakan.'); return; }
     if (ditolak && f.alasan === 'Lainnya' && !f.detail.trim()) { setError('Isi keterangan alasan penolakan (pilihan Lainnya).'); return; }
     if (diterima && !f.terima) { setError('Isi tanggal diterima.'); return; }
     setBusy(true);
     try {
-      if (canPrivate && nik) {
-        const q = await supabase.from('app_private_data').select('row_index,data').eq('module', REK).range(0, 4999);
+      if (nik) {
+        const q = await supabase.from('app_data').select('row_index,data').eq('module', REK).range(0, 4999);
         if (q.error) throw q.error;
         const dup = (q.data || []).find(r => r.row_index !== (rec?.row_index ?? -1) && digits(getKey(r.data, K.nik)) === nik);
         if (dup) throw new Error('NIK ini sudah dipakai kandidat lain.');
@@ -120,7 +111,8 @@ export default function KandidatForm({ rowIndex = null, data = [], canPrivate, o
         ...base,
         [K.nama]: nama, [K.jab]: jab, [K.sumber]: f.sumber, [K.lamar]: f.lamar, [K.tahap]: f.tahap, [K.hasil]: f.hasil,
         [K.alasan]: ditolak ? f.alasan : '', [K.detail]: ditolak && f.alasan === 'Lainnya' ? f.detail.trim() : '',
-        [K.terima]: diterima ? f.terima : '', [K.catatan]: f.catatan.trim(), [K.tth]: tth
+        [K.terima]: diterima ? f.terima : '', [K.catatan]: f.catatan.trim(), [K.tth]: tth,
+        [K.nik]: nik, [K.hp]: f.hp.trim()
       };
       let idx = rec?.row_index;
       if (rec) {
@@ -133,16 +125,6 @@ export default function KandidatForm({ rowIndex = null, data = [], canPrivate, o
         const r = await supabase.from('app_data').insert({ module: REK, row_index: idx, data: pub });
         if (r.error) throw r.error;
       }
-      if (canPrivate) {
-        const keep = { ...priv };
-        Object.keys(keep).forEach(k => { if (isPrivKey(k)) delete keep[k]; });
-        const p = { ...keep, [K.nik]: nik, [K.hp]: f.hp.trim() };
-        const r = await supabase.from('app_private_data').upsert({ module: REK, row_index: idx, data: p, updated_at: new Date().toISOString() }, { onConflict: 'module,row_index' });
-        if (r.error) {
-          // Data umum sudah masuk; beri tahu bahwa bagian privat belum tersimpan
-          throw new Error(`Data kandidat tersimpan, tetapi NIK/No. HP belum tersimpan: ${r.error.message}`);
-        }
-      }
       await onSaved?.();
       onClose();
     } catch (err) { setError(err.message || 'Gagal menyimpan data.'); }
@@ -154,8 +136,6 @@ export default function KandidatForm({ rowIndex = null, data = [], canPrivate, o
     if (!rec || ketik.trim().toUpperCase() !== 'HAPUS') return;
     setError(''); setBusy(true);
     try {
-      const p = await supabase.from('app_private_data').delete().eq('module', REK).eq('row_index', rec.row_index);
-      if (p.error) throw p.error;
       const a = await supabase.from('app_data').delete().eq('id', rec.id).select('id');
       if (a.error) throw a.error;
       if (!a.data || !a.data.length) throw new Error('Kandidat tidak terhapus. Periksa izin akun Anda.');
@@ -182,12 +162,12 @@ export default function KandidatForm({ rowIndex = null, data = [], canPrivate, o
           {ditolak && <label><span>Alasan ditolak *</span><select value={f.alasan} onChange={e => set('alasan', e.target.value)}>
             <option value="">— Pilih alasan —</option>{opsi(ALASAN, f.alasan).map(s => <option key={s} value={s}>{s}</option>)}</select></label>}
           {ditolak && f.alasan === 'Lainnya' && <label className="field-wide"><span>Keterangan alasan (ketik manual) *</span><input value={f.detail} onChange={e => set('detail', e.target.value)} /></label>}
-          {canPrivate && <label><span>NIK<em className="private-tag">PRIVAT</em></span><input inputMode="numeric" maxLength={16} value={f.nik} placeholder="16 digit, boleh kosong dulu" onChange={e => set('nik', digits(e.target.value).slice(0, 16))} /></label>}
-          {canPrivate && <label><span>No. HP<em className="private-tag">PRIVAT</em></span><input inputMode="tel" value={f.hp} onChange={e => set('hp', e.target.value)} /></label>}
+          <label><span>NIK</span><input inputMode="numeric" maxLength={16} value={f.nik} placeholder="16 digit, boleh kosong dulu" onChange={e => set('nik', digits(e.target.value).slice(0, 16))} /></label>
+          <label><span>No. HP</span><input inputMode="tel" value={f.hp} onChange={e => set('hp', e.target.value)} /></label>
           <label className="field-wide"><span>Catatan</span><textarea rows="3" value={f.catatan} onChange={e => set('catatan', e.target.value)} /></label>
         </div>
         <datalist id="kdt-jabatan">{jabList.map(j => <option key={j} value={j} />)}</datalist>
-        {canPrivate && !digits(f.nik) && <p className="subtle">NIK belum diisi: kandidat akan ditandai “NIK belum lengkap” sampai HR melengkapinya.</p>}
+        {!digits(f.nik) && <p className="subtle">NIK belum diisi: kandidat akan ditandai “NIK belum lengkap” sampai HR melengkapinya.</p>}
         {error && <div className="form-error">{error}</div>}
         {hapusMode && rec ? (
           <div style={{ border: '1px solid #f1b5b0', background: '#fff5f4', borderRadius: 10, padding: 12, marginTop: 10 }}>
@@ -215,10 +195,8 @@ export async function buatKandidatDariTes({ nama, hp, jabatan }) {
   const m = await supabase.from('app_data').select('row_index').eq('module', REK).order('row_index', { ascending: false }).limit(1);
   if (m.error) throw m.error;
   const idx = (m.data?.[0]?.row_index || 0) + 1;
-  const pub = { [K.nama]: nama, [K.jab]: jabatan || '', [K.sumber]: 'Lainnya', [K.lamar]: todayIso(), [K.tahap]: 'Test Tulis', [K.hasil]: 'Proses', [K.alasan]: '', [K.detail]: '', [K.terima]: '', [K.catatan]: 'Ditambahkan dari Tes Teori', [K.tth]: '' };
+  const pub = { [K.nama]: nama, [K.jab]: jabatan || '', [K.sumber]: 'Lainnya', [K.lamar]: todayIso(), [K.tahap]: 'Test Tulis', [K.hasil]: 'Proses', [K.alasan]: '', [K.detail]: '', [K.terima]: '', [K.catatan]: 'Ditambahkan dari Tes Teori', [K.tth]: '', [K.nik]: '', [K.hp]: hp || '' };
   const a = await supabase.from('app_data').insert({ module: REK, row_index: idx, data: pub });
   if (a.error) throw a.error;
-  const b = await supabase.from('app_private_data').upsert({ module: REK, row_index: idx, data: { [K.nik]: '', [K.hp]: hp }, updated_at: new Date().toISOString() }, { onConflict: 'module,row_index' });
-  if (b.error) throw b.error;
   return idx;
 }
