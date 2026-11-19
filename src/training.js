@@ -1,4 +1,4 @@
-import { DEPT, toDate, val } from './utils.js';
+import { DEPT, resignedChecker, toDate, val } from './utils.js';
 
 // Daftar training per kategori (sama dengan urutan kolom TNA di App).
 export const TRAINING_GROUPS = [
@@ -31,7 +31,8 @@ export const isPlanned = v => {
  * Aktual = dari mereka, yang sudah punya tanggal di TNA_Realisasi (NRP sama).
  */
 export function computeTraining(data, inDept = () => true) {
-  const plans = data.filter(x => x.module === 'TNA_Plan').map(x => x.data || {}).filter(inDept);
+  const gone = resignedChecker(data);
+  const plans = data.filter(x => x.module === 'TNA_Plan').map(x => x.data || {}).filter(r => !gone(r)).filter(inDept);
   const real = new Map();
   data.filter(x => x.module === 'TNA_Realisasi').forEach(x => real.set(idOf(x.data || {}), x.data || {}));
 

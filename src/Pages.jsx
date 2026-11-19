@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import Icon from './Icon.jsx';
 import { supabase } from './supabase';
 import { getKey, digits } from './KandidatForm.jsx';
-import { DAY, avg, daysLeft, fmt, isLicense, norm, num, toDate, today, val, yearOf } from './utils.js';
+import { DAY, avg, daysLeft, fmt, isLicense, norm, num, toDate, today, val, yearOf, resignedChecker } from './utils.js';
+import AtrUpdate from './AtrUpdate.jsx';
 import './dashboard.css';
 import './pages.css';
 
@@ -144,7 +145,8 @@ function KompetensiPage({ data, loading, onRefresh, onOpen }) {
   const [kat, setKat] = useState(''); const [kom, setKom] = useState('');
   const all = useMemo(() => {
     const t = today();
-    return rowsOf(data, 'Data_Kompetensi').filter(r => !isLicense(r)).map((r, i) => ({
+    const gone = resignedChecker(data);
+    return rowsOf(data, 'Data_Kompetensi').filter(r => !isLicense(r) && !gone(r)).map((r, i) => ({
       k: i, nama: val(r, 'NAMA', 'Nama'), id: val(r, 'AMODI', 'NRP'), jab: val(r, 'JABATAN', 'Jabatan'), kom: val(r, 'Kompetensi'), kat: val(r, 'Kategori'),
       reg: val(r, 'No. Registrasi'), ket: val(r, 'Keterangan'), exp: toDate(val(r, 'Expired')), left: daysLeft(val(r, 'Expired'), t)
     })).sort(cmpLeft);
@@ -216,12 +218,13 @@ function UnitPage({ data, loading, onRefresh, onOpen, canWriteUnit, onAddUnit })
 }
 
 /* ============ ATR ============ */
-function ATRPage({ data, loading, onRefresh }) {
+function ATRPage({ data, loading, onRefresh, onOpen, canWriteATR }) {
   const [q, setQ] = useState(''); const [tab, setTab] = useState('semua'); const [dept, setDept] = useState('');
-  const all = useMemo(() => rowsOf(data, 'Data_ATR').map((r, i) => {
+  const [upd, setUpd] = useState(false);
+  const all = useMemo(() => { const gone = resignedChecker(data); return rowsOf(data, 'Data_ATR').filter(r => !gone(r)).map((r, i) => {
     const m = MONTHS.map(x => pctOf(val(r, x)));
     return { k: i, nama: val(r, 'Nama', 'NAMA'), id: val(r, 'AMODI', 'NRP'), jab: val(r, 'Jabatan', 'JABATAN'), dept: val(r, 'Departemen', 'DEPARTEMEN', 'Department'), m, ytd: pctOf(val(r, 'YTD')) };
-  }).sort((a, b) => (a.ytd ?? 999) - (b.ytd ?? 999)), [data]);
+  }).sort((a, b) => (a.ytd ?? 999) - (b.ytd ?? 999)); }, [data]);
   const monthly = MONTHS.map((_, i) => avg(all.map(r => r.m[i]).filter(x => x !== null)));
   const lastI = monthly.reduce((l, v, i) => (v !== null ? i : l), -1);
   const used = MONTHS.map((_, i) => i).filter(i => all.some(r => r.m[i] !== null));
@@ -231,7 +234,11 @@ function ATRPage({ data, loading, onRefresh }) {
   const rows = all.filter(r => (tab === 'semua' || (tab === 'low' ? r.ytd !== null && r.ytd < ATR_TARGET : r.ytd !== null && r.ytd >= ATR_TARGET)) && (!dept || r.dept === dept) && (!needle || hay(r.nama, r.id).includes(needle)));
   const P = v => (v === null ? <span className="muted-cell">-</span> : <span style={v < ATR_TARGET ? { color: 'var(--alert)' } : undefined}>{fmt(v, 1)}%</span>);
   return <Wrap loading={loading} data={data}>
-    <Head title="ATR" sub="Attendance Rate karyawan per bulan dan YTD. Target kehadiran 95%."><Refresh onRefresh={onRefresh} /></Head>
+    <Head title="ATR" sub="Attendance Rate karyawan per bulan dan YTD. Target kehadiran 95%. Karyawan yang sudah resign tidak ditampilkan.">
+      {canWriteATR && <button type="button" className="btn primary" onClick={() => setUpd(true)}><Icon name="plus" size={15} /> Update ATR bulanan</button>}
+      {canWriteATR && onOpen && <button type="button" className="btn light" onClick={() => onOpen('Data_ATR', RAW('atr', undefined, 'Semua data ATR'))}>Tabel data</button>}
+      <Refresh onRefresh={onRefresh} /></Head>
+    {upd && <AtrUpdate data={data} onClose={() => setUpd(false)} onSaved={onRefresh} />}
     <Cards items={[{ v: lastI < 0 ? '—' : `${fmt(avg(all.map(r => r.ytd).filter(x => x !== null)), 1)}%`, l: 'Rata-rata ATR YTD', t: 'blue' }, { v: fmt(ok, 0), l: 'Sesuai target', t: 'green', go: () => setTab('ok'), on: tab === 'ok' },
       { v: fmt(low, 0), l: 'Di bawah target', t: 'red', go: () => setTab('low'), on: tab === 'low' }, { v: lastI < 0 ? '—' : `${fmt(monthly[lastI], 1)}%`, l: `Rata-rata ATR ${MONTHS[lastI] || ''}`, t: 'teal' }, { v: fmt(all.length, 0), l: 'Karyawan', t: 'gray' }]} />
     <Panel title="Tren ATR per bulan" sub="Rata-rata seluruh karyawan, bulan yang sudah terisi.">

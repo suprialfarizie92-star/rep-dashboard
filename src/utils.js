@@ -45,6 +45,39 @@ export function toDate(v) {
   return null;
 }
 
+// Karyawan dianggap resign bila kolom "Tanggal Resign" di Data_Karyawan terisi (tanda "-" dianggap kosong).
+export const isResigned = r => {
+  const v = val(r, 'Tanggal Resign');
+  if (v === undefined || v === null) return false;
+  const s = String(v).trim();
+  return s !== '' && s !== '-' && s !== '—';
+};
+
+/**
+ * Mengembalikan fungsi cek: apakah satu baris data (ATR, Kompetensi, TNA Plan, dst.) milik karyawan yang sudah resign.
+ * Dicocokkan lewat AMODI/NRP ke Data_Karyawan; bila baris tidak punya ID yang dikenal, dicocokkan lewat nama.
+ */
+export function resignedChecker(data) {
+  const allIds = new Set(); const goneIds = new Set(); const goneNames = new Set();
+  data.forEach(x => {
+    if (x.module !== 'Data_Karyawan') return;
+    const r = x.data || {};
+    const ids = [val(r, 'AMODI'), val(r, 'NRP')].filter(v => v !== undefined).map(norm);
+    ids.forEach(i => allIds.add(i));
+    if (!isResigned(r)) return;
+    ids.forEach(i => goneIds.add(i));
+    const n = val(r, 'Nama', 'NAMA');
+    if (n !== undefined) goneNames.add(norm(n));
+  });
+  return r => {
+    const ids = [val(r, 'AMODI'), val(r, 'NRP')].filter(v => v !== undefined).map(norm);
+    if (ids.some(i => goneIds.has(i))) return true;
+    if (ids.some(i => allIds.has(i))) return false;
+    const n = val(r, 'Nama', 'NAMA');
+    return n !== undefined && goneNames.has(norm(n));
+  };
+}
+
 export const daysLeft = (v, t) => { const d = toDate(v); return d ? Math.round((d - t) / DAY) : null; };
 export const yearOf = v => { const d = toDate(v); return d ? d.getFullYear() : null; };
 
@@ -65,7 +98,7 @@ export function licenseDocs(data) {
   data.forEach(x => {
     if (x.module !== 'Data_Karyawan') return;
     const r = x.data || {};
-    if (val(r, 'Tanggal Resign')) return;
+    if (isResigned(r)) return;
     Object.keys(r).forEach(key => {
       const type = LICENSE_TYPES[typeKey(key)];
       const exp = type ? toDate(r[key]) : null;

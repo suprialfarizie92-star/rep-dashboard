@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import Icon from './Icon.jsx';
-import { DAY, DEPT, norm, today, avg, fmt, num, val, toDate, daysLeft, yearOf, isLicense, licenseDocs } from './utils.js';
+import { DAY, DEPT, norm, today, avg, fmt, num, val, toDate, daysLeft, yearOf, isLicense, licenseDocs, isResigned, resignedChecker } from './utils.js';
 import { computeTraining } from './training.js';
 import { KOMPETENSI_PRESET } from './nav.js';
 import './dashboard.css';
@@ -75,7 +75,8 @@ export default function Dashboard({ data, loading, hasData, isAdmin, onImport, o
     const deptOf = r => val(r, ...DEPT);
     const inDept = r => { if (!dept) return true; const d = deptOf(r); return d === undefined || norm(d) === norm(dept); };
     const statusOk = r => !status || norm(val(r, 'Status Karyawan')) === norm(status);
-    const isActive = r => !val(r, 'Tanggal Resign');
+    const isActive = r => !isResigned(r);
+    const gone = resignedChecker(data);
     const empOk = r => inDept(r) && statusOk(r);
     // n = jumlah baris yang cocok, preset = filter yang dipakai saat kartu diklik
     const mk = (arr, label, test, nav) => ({ n: arr.filter(test).length, preset: { label, test, nav } });
@@ -95,7 +96,7 @@ export default function Dashboard({ data, loading, hasData, isAdmin, onImport, o
       over: mk(allEmp, 'Kontrak sudah lewat', r => empOk(r) && isActive(r) && kd(r) !== null && kd(r) < 0)
     };
 
-    const comp = rows('Data_Kompetensi');
+    const comp = rows('Data_Kompetensi').filter(r => !gone(r));
     const ld = r => daysLeft(val(r, 'Expired'), t);
     const kompRows = comp.filter(r => !isLicense(r) && inDept(r));
     const docs = licenseDocs(data).filter(x => empOk(x.row));
@@ -144,7 +145,7 @@ export default function Dashboard({ data, loading, hasData, isAdmin, onImport, o
       dok: mk(veh, 'Dokumen kendaraan lewat/segera', r => due(r, /stnk|kir|pajak|expired|berlaku|habis/i), 'unit')
     };
 
-    const atrRows = rows('Data_ATR');
+    const atrRows = rows('Data_ATR').filter(r => !gone(r));
     const pct = v => { const n = num(v); return n === null ? null : n <= 1.5 ? n * 100 : n; };
     const ytd = r => pct(val(r, 'YTD'));
     const monthly = MONTHS.map(m => ({ m, v: avg(atrRows.filter(inDept).map(r => pct(val(r, m))).filter(x => x !== null)) }));

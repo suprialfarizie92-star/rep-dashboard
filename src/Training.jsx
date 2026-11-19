@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import Icon from './Icon.jsx';
-import { DEPT, fmt, norm, val } from './utils.js';
+import { DEPT, fmt, norm, resignedChecker, val } from './utils.js';
 import { computeTraining, idOf, isPlanned } from './training.js';
 import './dashboard.css';
 
@@ -22,10 +22,10 @@ export default function Training({ data, loading, onRefresh, onOpen }) {
   const [only, setOnly] = useState('');
   const [expanded, setExpanded] = useState('');
 
-  const depts = useMemo(
-    () => [...new Set(data.filter(x => x.module === 'TNA_Plan').map(x => val(x.data || {}, ...DEPT)).filter(Boolean).map(String))].sort(),
-    [data]
-  );
+  const depts = useMemo(() => {
+    const gone = resignedChecker(data);
+    return [...new Set(data.filter(x => x.module === 'TNA_Plan' && !gone(x.data || {})).map(x => val(x.data || {}, ...DEPT)).filter(Boolean).map(String))].sort();
+  }, [data]);
   const T = useMemo(() => computeTraining(data, r => !dept || norm(val(r, ...DEPT)) === norm(dept)), [data, dept]);
   const rows = useMemo(
     () => T.items.filter(i => !only || i.status === only).sort((a, b) => (asc ? a.pct - b.pct : b.pct - a.pct)),
