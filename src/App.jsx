@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { isSupabaseConfigured, supabase } from './supabase';
 import Icon from './Icon.jsx';
@@ -239,8 +239,7 @@ const columns = useMemo(() => {
     'AMODI', 'NRP', 'NRPP', 'Nama', 'Jabatan',
     'Departemen', 'District', 'Perusahaan',
     'Status Karyawan', 'Tanggal Masuk', 'Awal Kontrak',
-    'Akhir Kontrak', 'Keterangan', 'Tanggal Resign',
-    'Jenis Resign', 'Tempat Lahir', 'Tanggal Lahir',
+    'Akhir Kontrak', 'Tempat Lahir', 'Tanggal Lahir',
     'Jenis Kelamin', 'Status', 'Agama', 'Pendidikan',
     'Email', 'Gol. Darah', 'Alamat', 'Ibu', 'Istri',
     'Domisili', 'Ring', 'HP Istri', 'Kontak Darurat',
@@ -248,7 +247,8 @@ const columns = useMemo(() => {
     'LV', 'Bus', 'P360', 'FMX420', 'FMX400',
     'PC210', 'PC350', 'D85', 'Simpol', 'Simper',
     'Authority', 'Escorting', 'HighRisk',
-    'PowerTools', 'Foto'
+    'PowerTools', 'Foto',
+    'Tanggal Resign', 'Jenis Resign', 'Keterangan'
   ];
 
   const unitOrder = [
@@ -427,7 +427,12 @@ const tnaRealisasiOrder = [
 };
 
   if (moduleName === 'datakaryawan') {
-    return arrangeColumns(employeeColumnOrder);
+    // Kolom resign selalu paling kanan (setelah Foto), urutan: Tanggal Resign, Jenis Resign, Keterangan.
+    const tail = ['Tanggal Resign', 'Jenis Resign', 'Keterangan']
+      .map(findColumn)
+      .filter(Boolean);
+    const arranged = arrangeColumns(employeeColumnOrder);
+    return [...arranged.filter(col => !tail.includes(col)), ...tail];
   }
 
   if (moduleName === 'dataunit') {
@@ -476,9 +481,52 @@ if (moduleName === 'atr' || moduleName === 'dataatr') {
     : dataColumns;
 }, [rows, module]);
 
-const visibleColumns = showAllColumns
+// Mode ringkas: tampilkan sebanyak mungkin kolom yang muat di lebar panel.
+// fitCount null = sedang mengukur (semua kolom dirender sesaat, lalu dipangkas sebelum tampil).
+const scrollRef = useRef(null);
+const [fitCount, setFitCount] = useState(null);
+const [measureTick, setMeasureTick] = useState(0);
+
+useEffect(() => {
+  const el = scrollRef.current;
+  if (!el || typeof ResizeObserver === 'undefined') return;
+  let lastWidth = el.clientWidth;
+  const ro = new ResizeObserver(() => {
+    if (Math.abs(el.clientWidth - lastWidth) > 1) {
+      lastWidth = el.clientWidth;
+      setMeasureTick(t => t + 1);
+    }
+  });
+  ro.observe(el);
+  return () => ro.disconnect();
+}, [loading, rows.length === 0]);
+
+// Ukur ulang saat data, kolom, halaman, atau lebar berubah.
+useEffect(() => { setFitCount(null); }, [columns, measureTick, showAllColumns, canWrite]);
+
+useLayoutEffect(() => {
+  if (showAllColumns || fitCount !== null) return;
+  const el = scrollRef.current;
+  const ths = el?.querySelectorAll('thead th');
+  if (!el || !ths || ths.length === 0) return;
+
+  const widths = Array.from(ths).map(th => th.getBoundingClientRect().width);
+  const actionWidth = canWrite ? widths.pop() : 0;
+  const available = el.clientWidth - actionWidth;
+
+  let used = 0;
+  let count = 0;
+  for (const w of widths) {
+    if (used + w > available) break;
+    used += w;
+    count += 1;
+  }
+  setFitCount(Math.max(count, Math.min(3, widths.length)));
+});
+
+const visibleColumns = showAllColumns || fitCount === null
   ? columns
-  : columns.slice(0, 8);
+  : columns.slice(0, fitCount);
 
 // Tabel unit dan kendaraan: kolom Model dan Keterangan rata kiri, kolom lain rata tengah.
 const isUnitTable = module === 'Data_Unit' || module === 'Data_LV & Bus';
@@ -604,7 +652,7 @@ const alignOf = (col) => {
           </div>
         ) : (
           <>
-            <div className="table-scroll">
+            <div className="table-scroll" ref={scrollRef}>
               <table>
                 <thead>
                   <tr>
