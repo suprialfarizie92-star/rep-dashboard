@@ -1,0 +1,10 @@
+/* Menu Laporan SHE: font kontrol disamakan dengan dashboard, plus tambahan kecil */
+.lap input, .lap select, .lap textarea, .lap button { font-family:inherit; }
+.lap .dash-search, .lap .dash-select, .lap .dash-filters select, .lap .lic-bar label { font-size:.75rem; font-weight:500; }
+.lap-sub { display:block; margin-top:2px; color:var(--muted); font-size:.625rem; white-space:nowrap; }
+.lap-note { padding:10px 14px; border-radius:10px; border:1px solid color-mix(in srgb, var(--warn) 35%, var(--surface)); background:color-mix(in srgb, var(--warn) 8%, var(--surface)); font-size:.75rem; color:var(--text-2); line-height:1.55; }
+.lap-title { margin:0 0 2px; font:700 .9375rem Manrope,sans-serif; color:var(--text); }
+.lap-hint { margin:0 0 12px; font-size:.75rem; color:var(--text-2); }
+.lap .ttable td { vertical-align:top; }
+.lap .ttable td.lap-wrap { min-width:200px; white-space:normal; line-height:1.45; }
+.lap-check { display:flex; align-items:center; gap:6px; font-size:.75rem; color:var(--text-2); }

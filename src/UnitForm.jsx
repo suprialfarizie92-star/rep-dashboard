@@ -20,6 +20,9 @@ const JENIS = {
       { id: 'remark', label: 'Remark', re: /^remark/i, def: 'Remark', list: 1 },
       { id: 'kom', label: 'Tanggal komisioning', re: /komisioning|commissioning/i, def: 'Komisioning', date: 1, req: 1 },
       { id: 'ber', label: 'Masa berlaku (otomatis 1 tahun dari komisioning)', re: /masa\s*berlaku|berlaku|expired|habis/i, def: 'Masa Berlaku', date: 1, hanyaBilaAda: 1 },
+      { id: 'akses', label: 'Akses', re: /^akses/i, def: 'Akses', hanyaBilaAda: 1, list: 1, defaults: ['Pit Access'] },
+      { id: 'shift', label: 'Shift', re: /^shift/i, def: 'Shift', hanyaBilaAda: 1, list: 1, defaults: ['1', '1 & 2', '1, 2, 3'] },
+      { id: 'opt', label: 'Operator (Ya/Tidak)', re: /^(opt|operator)/i, def: 'Operator', hanyaBilaAda: 1, list: 1, defaults: ['Ya', 'Tidak'] },
       { id: 'ket', label: 'Keterangan', re: /^(keterangan|ket)/i, def: 'Keterangan', wide: 1 }
     ]
   },
@@ -36,6 +39,9 @@ const JENIS = {
       { id: 'stnk', label: 'STNK', re: /stnk/i, def: 'STNK', date: 1 },
       { id: 'kir', label: 'KIR', re: /kir/i, def: 'KIR', date: 1 },
       { id: 'kom', label: 'Komisioning (masa berlaku)', re: /komisioning|commissioning/i, def: 'Komisioning (Masa Berlaku)', date: 1 },
+      { id: 'akses', label: 'Akses', re: /^akses/i, def: 'Akses', hanyaBilaAda: 1, list: 1, defaults: ['Pit Access'] },
+      { id: 'shift', label: 'Shift', re: /^shift/i, def: 'Shift', hanyaBilaAda: 1, list: 1, defaults: ['1', '1 & 2'] },
+      { id: 'driver', label: 'Driver (Ya/Tidak)', re: /^driver/i, def: 'Driver', hanyaBilaAda: 1, list: 1, defaults: ['Ya', 'Tidak'] },
       { id: 'cat', label: 'Keterangan', re: /keterangan|catatan|^ket/i, def: 'Keterangan', wide: 1 }
     ]
   }
