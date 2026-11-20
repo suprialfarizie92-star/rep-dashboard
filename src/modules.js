@@ -12,5 +12,8 @@ export const MODULES = [
   ['Data_Rekrutmen', 'Rekrutmen', 'recruitment'],
   ['Data_ATR', 'ATR', 'attendance'],
   ['Data_Unit', 'Data Unit', 'truck'],
-  ['Data_LV & Bus', 'Data LV & Bus', 'vehicle']
+  ['Data_LV & Bus', 'Data LV & Bus', 'vehicle'],
+  ['SMKP_Elemen', 'SMKP - Elemen', 'audit'],
+  ['SMKP_Item', 'SMKP - Butir Penilaian', 'audit'],
+  ['SMKP_Temuan', 'SMKP - Temuan & Tindak Lanjut', 'audit']
 ];

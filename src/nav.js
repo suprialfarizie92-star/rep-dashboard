@@ -25,5 +25,6 @@ export const NAV = [
   { id: 'tes', label: 'Tes Teori', icon: 'action', modules: ['Tes'] },
   { id: 'training', label: 'Training', icon: 'training', modules: ['Training', 'TNA_Plan', 'TNA_Realisasi'], perms: ['TNA_Plan', 'TNA_Realisasi'] },
   { id: 'pembinaan', label: 'Pembinaan Karyawan', icon: 'discipline', modules: ['REKAP_SP'] },
+  { id: 'smkp', label: 'SMKP', icon: 'audit', modules: ['SMKP_Elemen'], perms: ['SMKP_Elemen'] },
   { id: 'input', label: 'Input data', icon: 'plus', modules: [] } // khusus admin: impor Excel
 ];

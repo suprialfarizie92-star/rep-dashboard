@@ -1,0 +1,41 @@
+/* Menu SMKP: hanya tambahan kecil; selebihnya memakai kelas dashboard.css */
+.sm-panels { display:grid; gap:16px; grid-template-columns:repeat(auto-fit, minmax(380px, 1fr)); align-items:start; }
+.sm-panel-title { margin:0 0 2px; font:700 .9375rem Manrope,sans-serif; color:var(--text); }
+.sm-sub { margin:0 0 12px; font-size:.75rem; color:var(--text-2); }
+.sm-clip { max-width:380px; min-width:220px; white-space:normal; line-height:1.45; }
+.sm-ref { display:block; margin-top:3px; color:var(--muted); font-size:.625rem; }
+.sm-select { height:30px; border:1px solid var(--line); border-radius:7px; background:var(--surface); color:var(--text); padding:0 8px; font-size:.6875rem; font-weight:700; }
+.sm-import { display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:10px 14px; border:1px dashed var(--line); border-radius:10px; font-size:.75rem; color:var(--text-2); }
+.sm-note { padding:10px 14px; border-radius:10px; border:1px solid color-mix(in srgb, var(--warn) 35%, var(--surface)); background:color-mix(in srgb, var(--warn) 8%, var(--surface)); font-size:.75rem; color:var(--text-2); line-height:1.5; }
+.ttable tr.sm-group td { background:var(--surface-2); font-weight:800; font-size:.6875rem; }
+.ttable td.sm-lv3 { padding-left:28px; }
+.sm-hidden { display:none; }
+
+/* Font kontrol di halaman ini disamakan dengan font dashboard (DM Sans) */
+.smkp input, .smkp select, .smkp textarea, .smkp button { font-family:inherit; }
+.smkp .dash-search, .smkp .dash-select, .smkp .sm-select, .smkp .lic-bar label, .smkp .dash-filters select { font-size:.75rem; font-weight:500; }
+.smkp .dash-select, .smkp .dash-filters select { padding-right:6px; }
+.smkp .record-modal select { width:100%; height:36px; border:1px solid var(--line); border-radius:7px; padding:0 8px; background:var(--surface-2); color:var(--text); font-size:.6875rem; }
+
+/* Input audit */
+.sm-meta { display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:10px; align-items:end; margin-top:14px; }
+.sm-meta label { display:grid; gap:4px; font-size:.6875rem; font-weight:700; color:var(--text-2); }
+.sm-meta input, .sm-item textarea { width:100%; border:1px solid var(--line); border-radius:8px; background:var(--surface-2); color:var(--text); padding:8px 10px; font-size:.75rem; }
+.sm-items { display:grid; gap:12px; }
+.sm-item { display:grid; gap:10px; padding:14px; border:1px solid var(--line); border-radius:12px; background:var(--surface); }
+.sm-item[data-pending='1'] { border-left:4px solid var(--warn); }
+.sm-item[data-na='1'] { opacity:.6; }
+.sm-item-head { display:grid; gap:2px; font-size:.8125rem; line-height:1.45; }
+.sm-score { display:flex; flex-wrap:wrap; gap:6px; }
+.sm-score button { min-width:44px; height:40px; padding:0 12px; border:1px solid var(--line); border-radius:9px; background:var(--surface); color:var(--text-2); font-weight:800; font-size:.8125rem; }
+.sm-score button:hover:not(:disabled) { border-color:var(--accent); color:var(--text); }
+.sm-score button[aria-pressed='true'] { background:var(--accent); border-color:var(--accent); color:var(--on-accent); }
+.sm-score button.na { font-size:.6875rem; }
+.sm-crit { display:grid; gap:6px; font-size:.75rem; color:var(--text-2); line-height:1.5; }
+.sm-crit-now { margin:0; padding:8px 10px; border-radius:8px; background:var(--accent-soft); color:var(--text); white-space:pre-line; }
+.sm-crit-list { margin:0; padding:0; list-style:none; display:grid; gap:6px; }
+.sm-crit-list li { padding:8px 10px; border:1px solid var(--line-soft); border-radius:8px; white-space:pre-line; }
+.sm-crit-list li[data-on='1'] { border-color:var(--accent); background:var(--accent-soft); color:var(--text); }
+.sm-item-foot { display:grid; grid-template-columns:1fr auto; gap:10px; align-items:start; }
+.sm-item-foot label { display:grid; gap:4px; font-size:.6875rem; font-weight:700; color:var(--text-2); justify-items:start; }
+@media (max-width:720px) { .sm-item-foot { grid-template-columns:1fr; } .sm-score button { flex:1 0 44px; } }
