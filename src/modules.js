@@ -15,5 +15,10 @@ export const MODULES = [
   ['Data_LV & Bus', 'Data LV & Bus', 'vehicle'],
   ['SMKP_Elemen', 'SMKP - Elemen', 'audit'],
   ['SMKP_Item', 'SMKP - Butir Penilaian', 'audit'],
-  ['SMKP_Temuan', 'SMKP - Temuan & Tindak Lanjut', 'audit']
+  ['SMKP_Temuan', 'SMKP - Temuan & Tindak Lanjut', 'audit'],
+  ['SHE_Statistik', 'SHE - Statistik Insiden', 'report'],
+  ['SHE_Insiden', 'SHE - Catatan Insiden', 'report'],
+  ['SHE_Target', 'SHE - Target Performance', 'report'],
+  ['SHE_SAP', 'SHE - SAP per Orang', 'report'],
+  ['SHE_Inspeksi', 'SHE - Jadwal Inspeksi', 'report']
 ];

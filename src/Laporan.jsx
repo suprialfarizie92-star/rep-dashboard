@@ -1,13 +1,17 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import Icon from './Icon.jsx';
 import { fmt, norm } from './utils.js';
 import { BULAN, buildLaporan, cellText, fd, tablesOf } from './laporan.js';
+import { SHE, buildKinerja, buildStat, insidenBulan, penegakanBulan, targetOf, TARGET_DEFAULT, IND } from './she.js';
+import { INSP_MOD, SAP_FIELDS, SAP_MOD, buildInspeksi, buildSap, daysIn, inspeksiTotal, joinDays, parseDays, parseSapSheet, pctTxt } from './she3.js';
+import { InspeksiTab, SapTab, inspFields, sapFields } from './LaporanTahap3.jsx';
+import { FormModal, Insiden, Kinerja, Penegakan, Statistik, deleteRec, insidenFields, saveMany, saveRec, statFields, targetFields, toIsoDate } from './LaporanShe.jsx';
 import './dashboard.css';
 import './pages.css';
 import './laporan.css';
 
-const TABS = [['ringkasan', 'Ringkasan'], ['aktif', 'Karyawan aktif'], ['masuk', 'Karyawan masuk'], ['manpower', 'Manpower'], ['pengawas', 'Pengawas & teknis'], ['highrisk', 'High risk'], ['unit', 'Komisioning unit']];
+const TABS = [['ringkasan', 'Ringkasan'], ['aktif', 'Karyawan aktif'], ['masuk', 'Karyawan masuk'], ['manpower', 'Manpower'], ['pengawas', 'Pengawas & teknis'], ['highrisk', 'High risk'], ['unit', 'Komisioning unit'], ['kinerja', 'Performance'], ['statistik', 'Statistik insiden'], ['insiden', 'Insiden'], ['penegakan', 'Law enforcement'], ['sap', 'SAP'], ['inspeksi', 'Jadwal inspeksi']];
 
 function Cell({ c }) {
   if (c !== null && typeof c === 'object') return <><span className="badge" data-tone={c.tone || 'gray'}>{c.t}</span>{c.sub && <span className="lap-sub">{c.sub}</span>}</>;
@@ -27,7 +31,7 @@ function Tabel({ head, rows, empty = 'Tidak ada data untuk bagian ini.' }) {
   );
 }
 
-export default function Laporan({ data, loading, canPrivate, onRefresh }) {
+export default function Laporan({ data, loading, canPrivate, canWrite, onRefresh, onNotice }) {
   const [ym, setYm] = useState(() => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return { y: d.getFullYear(), m: d.getMonth() }; });
   const [tab, setTab] = useState('ringkasan');
   const [kontak, setKontak] = useState(false);
@@ -35,10 +39,103 @@ export default function Laporan({ data, loading, canPrivate, onRefresh }) {
   const [q, setQ] = useState('');
   const [hr, setHr] = useState('a2b');
   const [un, setUn] = useState('lv');
+  const [sub, setSub] = useState('summary');
+  const [modal, setModal] = useState(null);
+  const [busy, setBusy] = useState(false);
 
   const L = useMemo(() => buildLaporan(data, ym.y, ym.m), [data, ym]);
   const T = useMemo(() => tablesOf(L, { kontak: canPrivate && kontak, semuaKompetensi: semuaK }), [L, canPrivate, kontak, semuaK]);
+  const target = useMemo(() => targetOf(data, ym.y), [data, ym.y]);
+  const stat = useMemo(() => buildStat(data, ym.y, target.faktor), [data, ym.y, target.faktor]);
+  const kin = useMemo(() => buildKinerja(stat, target, ym.m), [stat, target, ym.m]);
+  const ins = useMemo(() => insidenBulan(data, ym.y, ym.m), [data, ym]);
+  const pen = useMemo(() => penegakanBulan(data, ym.y, ym.m), [data, ym]);
+  const bulanLabel = `${BULAN[ym.m]} ${ym.y}`;
+
+  // Jadwal inspeksi: klik kotak harus terasa langsung, jadi perubahan ditampilkan dulu sebelum data dimuat ulang.
+  const [ovI, setOvI] = useState({});
+  const ovIRef = useRef({});
+  const putOvI = n => { ovIRef.current = n; setOvI(n); };
+  useEffect(() => {
+    const keys = Object.keys(ovIRef.current);
+    if (!keys.length) return;
+    const by = new Map((data || []).filter(r => r.module === INSP_MOD).map(r => [String(r.row_index), r.data || {}]));
+    const next = {};
+    keys.forEach(k => { const base = by.get(k) || {}; const left = Object.fromEntries(Object.entries(ovIRef.current[k]).filter(([f, v]) => String(base[f] ?? '') !== String(v ?? ''))); if (Object.keys(left).length) next[k] = left; });
+    if (JSON.stringify(next) !== JSON.stringify(ovIRef.current)) putOvI(next);
+  }, [data]);
+  const dataI = useMemo(() => (Object.keys(ovI).length ? (data || []).map(r => (r.module === INSP_MOD && ovI[String(r.row_index)] ? { ...r, data: { ...r.data, ...ovI[String(r.row_index)] } } : r)) : data), [data, ovI]);
+  const sap = useMemo(() => buildSap(data, ym.y, ym.m), [data, ym]);
+  const insp = useMemo(() => buildInspeksi(dataI, ym.y, ym.m), [dataI, ym]);
+  const monthBase = ym.y * 10000 + (ym.m + 1) * 100;
   const thisYear = new Date().getFullYear();
+
+  // Penyimpanan: setiap aksi menyimpan ke app_data lalu memuat ulang data.
+  const run = async (fn, ok) => {
+    setBusy(true);
+    try { await fn(); setModal(null); onNotice?.(ok); await onRefresh?.(); } catch (e) { onNotice?.(`Gagal menyimpan: ${e.message}`); } finally { setBusy(false); }
+  };
+  const num = v => (v === '' || v === undefined || v === null ? '' : Number(v));
+  const saveStat = (i, f) => run(() => saveRec(SHE.stat, ym.y * 100 + i + 1, { Tahun: ym.y, Bulan: i + 1, ...Object.fromEntries(Object.entries(f).map(([k, v]) => [k, k === 'Catatan' ? v : num(v)])) }), `Statistik ${BULAN[i]} ${ym.y} disimpan.`);
+  const saveTarget = f => run(async () => {
+    const keys = [...IND.map(([k]) => k), 'faktor'];
+    for (let n = 0; n < keys.length; n += 1) await saveRec(SHE.target, ym.y * 100 + n + 1, { Tahun: ym.y, Kode: keys[n], Objective: f[keys[n]] ?? '' });
+  }, `Target ${ym.y} disimpan.`);
+  const saveInsiden = (f, row) => run(async () => {
+    const used = (data || []).filter(x => x.module === SHE.insiden).map(x => x.row_index);
+    await saveRec(SHE.insiden, row ? row.row_index : Math.max(0, ...used) + 1, f);
+  }, 'Insiden disimpan.');
+  const saveSapRow = (f, row) => run(async () => {
+    const used = sap.rows.map(r => r.row_index);
+    await saveRec(SAP_MOD, row ? row.row_index : Math.max(monthBase, ...used) + 1, { Tahun: ym.y, Bulan: ym.m + 1, No: row ? row.No : used.length + 1, Nama: String(f.Nama || '').trim().toUpperCase(), ...Object.fromEntries(SAP_FIELDS.map(([k]) => [k, num(f[k])])) });
+  }, 'Data SAP disimpan.');
+  const delSapRow = row => window.confirm(`Hapus ${row.Nama} dari SAP ${bulanLabel}?`) && run(() => deleteRec(SAP_MOD, row.row_index), 'Data SAP dihapus.');
+  const importSap = async file => {
+    try {
+      const p = parseSapSheet(XLSX, XLSX.read(await file.arrayBuffer(), { type: 'array' }));
+      if (!p.rows.length) throw new Error('Tidak ada baris SAP yang terbaca.');
+      const bln = BULAN.findIndex(b => new RegExp(b, 'i').test(p.title));
+      const warn = bln >= 0 && bln !== ym.m ? `\n\nPERHATIAN: judul file menyebut ${BULAN[bln]}, sedangkan bulan yang dipilih ${BULAN[ym.m]}.` : '';
+      if (!window.confirm(`Impor SAP ${bulanLabel}: ${p.rows.length} orang.\nData SAP bulan ini yang sudah ada akan diganti.${warn}`)) return;
+      await run(async () => {
+        await saveMany(SAP_MOD, p.rows.map((d, i) => ({ row_index: monthBase + i + 1, data: { Tahun: ym.y, Bulan: ym.m + 1, No: i + 1, ...d } })));
+        const keep = new Set(p.rows.map((_, i) => monthBase + i + 1));
+        for (const r of sap.rows) if (!keep.has(r.row_index)) await deleteRec(SAP_MOD, r.row_index);
+      }, `SAP ${bulanLabel} diimpor.`);
+    } catch (e) { onNotice?.(`Impor SAP gagal: ${e.message}`); }
+  };
+  const applyPerf = () => run(async () => {
+    const rec = (data || []).find(r => r.module === SHE.stat && r.row_index === ym.y * 100 + ym.m + 1);
+    if (!rec) throw new Error('Statistik bulan ini belum diisi.');
+    await saveRec(SHE.stat, rec.row_index, { ...rec.data, 'SAP Achievement': Math.round(Math.min(100, (sap.overall || 0) * 100) * 10) / 10 });
+  }, 'SAP Achievement diterapkan ke Performance.');
+  const toggleDay = async (it, key, day) => {
+    const orig = (data || []).find(r => r.module === INSP_MOD && r.row_index === it.row_index);
+    if (!orig) return;
+    const cur = parseDays(it[key]);
+    const patch = { [key]: joinDays(cur.includes(day) ? cur.filter(d => d !== day) : [...cur, day]) };
+    const k = String(it.row_index);
+    const mergedPatch = { ...(ovIRef.current[k] || {}), ...patch };
+    putOvI({ ...ovIRef.current, [k]: mergedPatch });
+    try { await saveRec(INSP_MOD, it.row_index, { ...orig.data, ...mergedPatch }); } catch (e) {
+      const c = { ...ovIRef.current }; delete c[k]; putOvI(c); onNotice?.(`Gagal menyimpan: ${e.message}`);
+    }
+  };
+  const addInsp = f => run(async () => {
+    const no = Math.max(0, ...insp.map(x => Number(x.No) || 0)) + 1;
+    await saveRec(INSP_MOD, monthBase + no, { Tahun: ym.y, Bulan: ym.m + 1, No: no, Inspeksi: String(f.Inspeksi || '').trim().toUpperCase(), Plan: '', Actual: '' });
+  }, 'Inspeksi ditambahkan.');
+  const delInsp = it => window.confirm(`Hapus inspeksi ${it.Inspeksi} dari ${bulanLabel}?`) && run(() => deleteRec(INSP_MOD, it.row_index), 'Inspeksi dihapus.');
+  const copyPrev = () => {
+    const py = ym.m === 0 ? ym.y - 1 : ym.y; const pm = ym.m === 0 ? 11 : ym.m - 1;
+    const prev = buildInspeksi(data, py, pm).filter(p => !insp.some(x => x.Inspeksi === p.Inspeksi));
+    if (!prev.length) { onNotice?.(`Tidak ada inspeksi baru untuk disalin dari ${BULAN[pm]} ${py}.`); return; }
+    if (!window.confirm(`Salin ${prev.length} inspeksi (hari rencana sama, realisasi dikosongkan) dari ${BULAN[pm]} ${py}?`)) return;
+    const maxD = daysIn(ym.y, ym.m); let no = Math.max(0, ...insp.map(x => Number(x.No) || 0));
+    run(() => saveMany(INSP_MOD, prev.map(p => { no += 1; return { row_index: monthBase + no, data: { Tahun: ym.y, Bulan: ym.m + 1, No: no, Inspeksi: p.Inspeksi, Plan: joinDays(p.plan.filter(d => d <= maxD)), Actual: '' } }; })), 'Rencana inspeksi disalin.');
+  };
+  const delInsiden = row => window.confirm('Hapus catatan insiden ini?') && run(() => deleteRec(SHE.insiden, row.row_index), 'Insiden dihapus.');
+
   const years = [thisYear - 2, thisYear - 1, thisYear, thisYear + 1];
   const filt = rows => { const n = norm(q); return n ? rows.filter(r => norm(r.map(cellText).join(' ')).includes(n)) : rows; };
   const hrG = T.highrisk.find(g => g.key === hr) || T.highrisk[0];
@@ -57,6 +154,16 @@ export default function Laporan({ data, loading, canPrivate, onRefresh }) {
     XLSX.writeFile(wb, `SHE_Laporan_${BULAN[ym.m]}_${ym.y}.xlsx`);
   };
 
+  const [pptBusy, setPptBusy] = useState(false);
+  const exportPpt = async () => {
+    setPptBusy(true);
+    try {
+      const { exportPptx } = await import('./pptx.js');
+      await exportPptx({ T, stat, kin, ins, pen, sap, insp, year: ym.y, month: ym.m });
+    } catch (e) {
+      onNotice?.(/pptxgenjs|dynamically imported|Failed to fetch/i.test(String(e.message)) ? 'Unduh PowerPoint butuh paket pptxgenjs. Jalankan: npm install pptxgenjs' : `Gagal membuat PowerPoint: ${e.message}`);
+    } finally { setPptBusy(false); }
+  };
   const card = (v, label, tone) => <div className="dcard static" data-tone={tone}><b>{v}</b><span>{label}</span></div>;
   const c = L.cards;
   const cakupan = [
@@ -67,8 +174,12 @@ export default function Laporan({ data, loading, canPrivate, onRefresh }) {
     ['Pengawas dan tenaga teknis', 'hal. 8', `${L.kompAll.filter(k => k.grup).length} catatan`, L.kompAll.some(k => k.grup)],
     ['Authority high risk A2B dan DT', 'hal. 9 sampai 11', `${c.hr} operator`, c.hr > 0],
     ['Komisioning LV, bus, dump truck, alat berat', 'hal. 12 sampai 14', `${L.lv.length} kendaraan, ${L.unitGrup.dt.length + L.unitGrup.alat.length + L.unitGrup.lain.length} unit`, L.lv.length + L.unitGrup.dt.length + L.unitGrup.alat.length > 0],
-    ['Performance monitoring, statistik insiden, kejadian berbahaya', 'hal. 15 sampai 19', 'Belum ada: modul input (tahap 2)', false],
-    ['Kegiatan SHE, kontrol kritis, BMI, inspeksi', 'hal. 20 sampai 45', 'Belum ada (tahap 2 dan 3)', false]
+    ['Performance monitoring dan statistik insiden', 'hal. 15 dan 16', `${stat.filter(s => s.filled).length} bulan terisi`, stat.some(s => s.filled)],
+    ['Summary sheet insiden dan kejadian berbahaya', 'hal. 17 dan 19', `${ins.length} insiden bulan ini`, true],
+    ['SHE Law Enforcement', 'hal. 18', `${pen.length} pembinaan bulan ini`, true],
+    ['SAP per orang', 'lampiran SAP', `${sap.rows.length} orang`, sap.rows.length > 0],
+    ['Jadwal inspeksi', 'hal. 25', `${insp.length} inspeksi, ACH ${pctTxt(inspeksiTotal(insp).ach)}`, insp.length > 0],
+    ['Kegiatan SHE (foto), kontrol kritis, BMI', 'hal. 20 sampai 24', 'Belum ada (tahap 3 berikutnya)', false]
   ];
 
   return (
@@ -82,6 +193,7 @@ export default function Laporan({ data, loading, canPrivate, onRefresh }) {
           <label>Bulan<select value={ym.m} onChange={e => setYm({ ...ym, m: Number(e.target.value) })}>{BULAN.map((b, i) => <option key={b} value={i}>{b}</option>)}</select></label>
           <label>Tahun<select value={ym.y} onChange={e => setYm({ ...ym, y: Number(e.target.value) })}>{years.map(y => <option key={y} value={y}>{y}</option>)}</select></label>
           <button type="button" className="btn light" onClick={exportXlsx} disabled={loading}><Icon name="download" size={15} /> Unduh Excel</button>
+          <button type="button" className="btn light" onClick={exportPpt} disabled={loading || pptBusy}><Icon name="download" size={15} /> {pptBusy ? 'Membuat PowerPoint...' : 'Unduh PowerPoint'}</button>
           <button type="button" className="btn light" onClick={onRefresh}><Icon name="refresh" size={15} /> Perbarui</button>
         </div>
       </div>
@@ -175,7 +287,30 @@ export default function Laporan({ data, loading, canPrivate, onRefresh }) {
               <Tabel head={unG.head} rows={unG.rows} />
             </section>
           )}
+
+          {tab === 'kinerja' && <Kinerja rows={kin} month={ym.m} year={ym.y} canWrite={canWrite} onTarget={() => setModal({ type: 'target' })} catatan={stat[ym.m]?.catatan} />}
+          {tab === 'statistik' && <Statistik stat={stat} year={ym.y} canWrite={canWrite} onEdit={i => setModal({ type: 'stat', i })} />}
+          {tab === 'insiden' && <Insiden list={ins} sub={sub} setSub={setSub} canWrite={canWrite} bulanLabel={bulanLabel} onAdd={() => setModal({ type: 'insiden' })} onEdit={row => setModal({ type: 'insiden', row })} />}
+          {tab === 'penegakan' && <Penegakan list={pen} bulanLabel={bulanLabel} />}
+          {tab === 'sap' && <SapTab sap={sap} year={ym.y} month={ym.m} canWrite={canWrite} onImport={importSap} onAdd={() => setModal({ type: 'sap' })} onEdit={row => setModal({ type: 'sap', row })} onApplyPerf={applyPerf} statAda={Boolean(stat[ym.m]?.filled)} />}
+          {tab === 'inspeksi' && <InspeksiTab list={insp} year={ym.y} month={ym.m} canWrite={canWrite} onToggle={toggleDay} onAdd={() => setModal({ type: 'insp' })} onDelete={delInsp} onCopyPrev={copyPrev} />}
         </>
+      )}
+
+      {modal?.type === 'stat' && (() => {
+        const s = stat[modal.i]; const r = s?.rec || {};
+        return <FormModal eyebrow={`STATISTIK INSIDEN ${ym.y}`} title={`Isi / ubah ${BULAN[modal.i]}`} fields={statFields} init={Object.fromEntries(statFields.map(x => [x.key, r[x.key] ?? '']))} onClose={() => setModal(null)} onSave={f => saveStat(modal.i, f)} />;
+      })()}
+      {modal?.type === 'sap' && (
+        <FormModal eyebrow={`SAP ${bulanLabel.toUpperCase()}`} title={modal.row ? `Ubah ${modal.row.Nama}` : 'Tambah orang'} fields={sapFields}
+          init={Object.fromEntries(sapFields.map(x => [x.key, modal.row?.[x.key] ?? '']))} onClose={() => setModal(null)} onSave={f => saveSapRow(f, modal.row)} onDelete={modal.row ? () => delSapRow(modal.row) : undefined} />
+      )}
+      {modal?.type === 'insp' && <FormModal eyebrow={`JADWAL INSPEKSI ${bulanLabel.toUpperCase()}`} title="Tambah inspeksi" fields={inspFields} init={{ Inspeksi: '' }} onClose={() => setModal(null)} onSave={addInsp} />}
+      {modal?.type === 'target' && <FormModal eyebrow={`TARGET ${ym.y}`} title="Atur objective performance" fields={targetFields} init={target} onClose={() => setModal(null)} onSave={saveTarget} />}
+      {modal?.type === 'insiden' && (
+        <FormModal eyebrow="CATATAN INSIDEN" title={modal.row ? 'Ubah insiden' : 'Catat insiden'} fields={insidenFields}
+          init={modal.row ? Object.fromEntries(insidenFields.map(x => [x.key, x.key === 'Tanggal' ? toIsoDate(modal.row.d) : modal.row[x.key] ?? ''])) : { Tanggal: toIsoDate(new Date(ym.y, ym.m, Math.min(new Date().getDate(), new Date(ym.y, ym.m + 1, 0).getDate()))), Kategori: 'Property Damage' }}
+          onClose={() => setModal(null)} onSave={f => saveInsiden(f, modal.row)} onDelete={modal.row ? () => delInsiden(modal.row) : undefined} />
       )}
     </div>
   );
