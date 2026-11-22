@@ -20,3 +20,10 @@
 .lap .insp-cell[data-on='Actual'] { background:#00a550; }
 .lap .insp-cell button { display:block; width:100%; height:24px; border:0; background:transparent; cursor:pointer; }
 .lap .insp-cell button:hover { background:color-mix(in srgb, var(--accent) 25%, transparent); }
+.lap .keg-h { margin:16px 0 8px; font:700 .8125rem Manrope,sans-serif; color:var(--text); }
+.lap .keg-fotos { display:flex; flex-wrap:wrap; gap:8px; }
+.lap .keg-foto { position:relative; margin:0; width:150px; height:100px; border-radius:8px; overflow:hidden; border:1px solid var(--line); background:var(--surface-2); }
+.lap .keg-foto img { width:100%; height:100%; object-fit:cover; display:block; }
+.lap .keg-foto button { position:absolute; top:4px; right:4px; width:22px; height:22px; border-radius:50%; border:0; background:rgba(0,0,0,.6); color:#fff; font-size:14px; line-height:1; cursor:pointer; }
+.lap .keg-ph { display:grid; place-items:center; width:150px; height:100px; border:1px dashed var(--line); border-radius:8px; color:var(--muted); font-size:.6875rem; }
+.lap .keg-act { display:flex; gap:8px; flex-wrap:wrap; }

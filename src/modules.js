@@ -20,5 +20,13 @@ export const MODULES = [
   ['SHE_Insiden', 'SHE - Catatan Insiden', 'report'],
   ['SHE_Target', 'SHE - Target Performance', 'report'],
   ['SHE_SAP', 'SHE - SAP per Orang', 'report'],
-  ['SHE_Inspeksi', 'SHE - Jadwal Inspeksi', 'report']
+  ['SHE_Inspeksi', 'SHE - Jadwal Inspeksi', 'report'],
+  ['SHE_Kegiatan', 'SHE - Kegiatan', 'report'],
+  ['SHE_PICA', 'SHE - PICA Manpower', 'report'],
+  ['SHE_Penyakit', 'SHE - Rekap Penyakit (PAK dan KAPTK)', 'report'],
+  ['SHE_KKP', 'SHE - Meeting KKP', 'report'],
+  ['SHE_MOM', 'SHE - MOM Meeting KKP', 'report'],
+  ['SHE_Lampiran', 'SHE - Lampiran (struktur organisasi)', 'report'],
+  ['SHE_KK', 'SHE - Kontrol Kritis Kronis (data kesehatan)', 'report'],
+  ['SHE_BMI', 'SHE - Kontrol BMI (data kesehatan)', 'report']
 ];

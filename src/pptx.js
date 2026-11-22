@@ -3,6 +3,8 @@ import { cellText } from './laporan.js';
 import { BULAN_PENDEK, KRITIS, nf, usd } from './she.js';
 import { BULAN, fd } from './laporan.js';
 import { SAP_KAT, daysIn, inspeksiTotal, pctTxt } from './she3.js';
+import { bmiTone, pctN } from './she5.js';
+import { toIso } from './smkp.js';
 
 const C = { navy: '1F3864', blue: '2F5597', red: 'C00000', line: '000000', zebra: 'F3F6FB', red2: 'FDE2E1', amber: 'FEF3C7', green: 'DCFCE7' };
 const TONE = { red: C.red2, amber: C.amber, green: C.green };
@@ -118,9 +120,91 @@ function inspeksiSlide(pptx, insp, year, month) {
   s.addTable([head, ...body], { x: X0, y: 1.25, w: W, colW: colW.map(x => x * sc), rowH: 0.165, border: { type: 'solid', pt: 0.5, color: C.line }, margin: [0, 0.02, 0, 0.02] });
 }
 
+/** Kegiatan SHE: tabel dengan kolom foto; foto ditempatkan di atas sel kolom terakhir. */
+function kegiatanSlides(pptx, keg, photos, bulanLabel) {
+  const widths = [0.5, 3.6, 2.2, 2.8, 3.4]; const HH = 0.3; const RH = 1.15; const GH = 0.28; const PER = 4;
+  const items = [...keg.rutin.map(x => ({ x, g: 'KEGIATAN RUTIN' })), ...keg.khusus.map(x => ({ x, g: 'KEGIATAN KHUSUS' }))];
+  const pages = []; for (let i = 0; i < items.length; i += PER) pages.push(items.slice(i, i + PER));
+  if (!pages.length) pages.push([]);
+  pages.forEach((pg, pi) => {
+    const s = frame(pptx, 'SHE ACTIVITY', pages.length > 1 ? `SHE Activity Report • ${bulanLabel} (${pi + 1}/${pages.length})` : `SHE Activity Report • ${bulanLabel}`);
+    const hd = t => ({ text: t, options: { bold: true, color: 'FFFFFF', fill: { color: C.navy }, align: 'center', valign: 'middle', fontSize: 10, fontFace: 'Arial' } });
+    const rows = [[hd('NO'), hd('ACTIVITY / KEGIATAN'), hd('DATE / TANGGAL'), hd('LOCATION / TEMPAT'), hd('ATTACHMENT / FOTO')]]; const rowH = [HH]; const pos = [];
+    let y = Y0 + HH; let last = null;
+    pg.forEach(({ x, g }) => {
+      if (g !== last) { rows.push([{ text: g, options: { colspan: 5, bold: true, fontSize: 9, fill: { color: 'D9E2F3' }, fontFace: 'Arial' } }]); rowH.push(GH); y += GH; last = g; }
+      const cell = (t, o = {}) => ({ text: t, options: { fontSize: 10, fontFace: 'Arial', valign: 'middle', ...o } });
+      rows.push([cell(String(x.No), { align: 'center' }), cell(x.Kegiatan, { bold: true }), cell(x.Tanggal || ''), cell(x.Lokasi || ''), cell('')]);
+      rowH.push(RH); pos.push({ y, x }); y += RH;
+    });
+    s.addTable(rows, { x: X0, y: Y0, w: W, colW: widths, rowH, border: { type: 'solid', pt: 0.5, color: C.line }, margin: [0.03, 0.06, 0.03, 0.06] });
+    const fx = X0 + widths.slice(0, 4).reduce((a, b) => a + b, 0);
+    pos.forEach(({ y: py, x }) => { const d = photos && photos[x.fotos[0]]; if (d) s.addImage({ data: d, x: fx + 0.08, y: py + 0.05, w: widths[4] - 0.16, h: RH - 0.1, sizing: { type: 'contain', w: widths[4] - 0.16, h: RH - 0.1 } }); });
+  });
+}
+
+/** Karyawan masuk dan keluar dalam satu slide seperti hal. 6 (kalau muat), selain itu dipisah per slide. */
+function masukKeluarSlides(pptx, T, bulanLabel) {
+  if (T.masuk.rows.length > 7 || T.keluar.rows.length > 7) {
+    tableSlides(pptx, 'MANPOWER', 'Daftar Karyawan yang Masuk', T.masuk.head, T.masuk.rows);
+    tableSlides(pptx, 'MANPOWER', 'Daftar Karyawan yang Keluar', T.keluar.head, T.keluar.rows);
+    return;
+  }
+  const s = frame(pptx, 'MANPOWER', 'Daftar Karyawan yang Masuk');
+  const widths = [0.7, 3.8, 3.0, 2.4, 2.6];
+  const hd = t => ({ text: t, options: { bold: true, color: 'FFFFFF', fill: { color: C.navy }, align: 'center', valign: 'middle', fontSize: 11, fontFace: 'Arial' } });
+  const tab = (t, rows, y, sub) => {
+    s.addText(sub, { x: X0, y: y - 0.32, w: 6, h: 0.3, fontSize: 11, bold: true, fontFace: 'Arial' });
+    const body = Array.from({ length: Math.max(3, rows.length) }, (_, i) => (rows[i] || [i + 1, '', '', '', '']).map((c, ci) => ({ text: txt(c), options: { fontSize: 10, fontFace: 'Arial', valign: 'middle', align: ci === 0 || ci === 3 ? 'center' : 'left' } })));
+    s.addTable([t.head.map(hd), ...body], { x: X0, y, w: 12.5, colW: widths, rowH: 0.3, border: { type: 'solid', pt: 0.5, color: C.line } });
+  };
+  tab(T.masuk, T.masuk.rows, 1.55, `PERIODE : ${bulanLabel.toUpperCase()}`);
+  s.addText('Daftar Karyawan yang Keluar', { x: X0, y: 3.95, w: W, h: 0.45, align: 'center', fontSize: 22, bold: true, fontFace: 'Arial' });
+  tab(T.keluar, T.keluar.rows, 4.75, `PERIODE : ${bulanLabel.toUpperCase()}`);
+}
+
+const dtx = v => (toIso(v) ? fd(new Date(`${toIso(v)}T00:00:00`)) : '');
+const HARI_ID = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+
+function imageSlide(pptx, label, title, data) {
+  const s = frame(pptx, label, title);
+  if (data) s.addImage({ data, x: X0, y: 1.2, w: W, h: 5.9, sizing: { type: 'contain', w: W, h: 5.9 } });
+  else s.addText('Gambar belum diunggah', { x: X0, y: 3.5, w: W, h: 0.5, align: 'center', italic: true, color: '666666', fontSize: 14, fontFace: 'Arial' });
+}
+
+function penyakitRows(M) {
+  const rows = []; let no = 0;
+  M.forEach(({ m, items }) => {
+    if (!items.length) { no += 1; rows.push([no, BULAN[m].slice(0, 3).toUpperCase(), 'NIHIL', '', '', '', '', '', '', '']); return; }
+    items.forEach(x => { no += 1; rows.push([no, BULAN[m].slice(0, 3).toUpperCase(), x.Nomor || '', `${dtx(x.Tanggal)}${x.Waktu ? ` ${x.Waktu}` : ''}`, x.Lokasi || '', x.Pekerja || '', x.Kronologis || '', x.Akibat || '', x.Dilaporkan || '', x.Catatan || '']); });
+  });
+  return rows;
+}
+const PEN_HEAD = ['NO', 'MONTH', 'NOMOR URUT KEJADIAN', 'WAKTU / HARI / TANGGAL', 'LOKASI', 'DEPARTEMEN, JABATAN, LAMA BEKERJA', 'KRONOLOGIS KEJADIAN', 'AKIBAT KEJADIAN', 'DILAPORKAN KE KAIT / KADIS', 'CATATAN'];
+
+function kkpSlides(pptx, kkp, photos, bulanLabel) {
+  const h = kkp.head; const tgl = h?.Tanggal ? new Date(`${toIso(h.Tanggal)}T00:00:00`) : null;
+  const sub = h ? `${tgl ? `${HARI_ID[tgl.getDay()]}, ${fd(tgl)}` : ''}${h.Tempat ? ` • ${h.Tempat}` : ''}` : '';
+  const head = ['NO', 'PROBLEM', 'ACTION', 'PIC', 'ISSUE DATE', 'DUE DATE', 'REMARK'];
+  const rows = items => items.map(x => [x.No, x.Problem, x.Action || '', x.PIC || '', dtx(x['Issue Date']), dtx(x['Due Date']), x.Remark || '']);
+  tableSlides(pptx, 'SHE ACTIVITY', `KKP Meeting Level II • Problem dari Bulan Lalu${sub ? ` (${sub})` : ''}`, head, rows(kkp.lalu));
+  tableSlides(pptx, 'SHE ACTIVITY', `KKP Meeting Level II • Problem Bulan Ini${sub ? ` (${sub})` : ''}`, head, rows(kkp.ini));
+  const ab = photos[kkp.absen[0]]; const mt = kkp.fotos.map(f => photos[f]).filter(Boolean).slice(0, 4);
+  if (ab || mt.length) {
+    const s = frame(pptx, 'SHE ACTIVITY', `KKP Meeting Level II • Foto dan Absensi • ${bulanLabel}`);
+    if (ab) s.addImage({ data: ab, x: X0, y: 1.25, w: 4.0, h: 5.9, sizing: { type: 'contain', w: 4.0, h: 5.9 } });
+    mt.forEach((d, i) => s.addImage({ data: d, x: 4.6 + (i % 2) * 4.2, y: 1.25 + Math.floor(i / 2) * 3.0, w: 4.0, h: 2.85, sizing: { type: 'contain', w: 4.0, h: 2.85 } }));
+  }
+}
+
+function ringkasKe(label, A) {
+  return ['NO', label, 'PERIODE I PLAN', 'ACTUAL', 'ACHIEV', 'PERIODE II PLAN', 'ACTUAL', 'ACHIEV', 'MTD PLAN', 'ACTUAL', 'ACHIEV'].length && [[1, A.n, A.n, A.p1, pctN(A.a1), A.n, A.p2, pctN(A.a2), A.n * 2, A.p1 + A.p2, pctN(A.mtd)]];
+}
+const RINGKAS_HEAD = ['NO', 'JUMLAH KARYAWAN', 'PERIODE I PLAN', 'ACTUAL', 'ACHIEV', 'PERIODE II PLAN', 'ACTUAL', 'ACHIEV', 'MTD PLAN', 'ACTUAL', 'ACHIEV'];
+
 /** Susun seluruh deck. `PptxGenJS` diberikan dari luar supaya bisa diuji tanpa browser. */
 export function buildDeck(PptxGenJS, ctx) {
-  const { T, stat, kin, ins, pen, sap, insp, year, month } = ctx;
+  const { T, stat, kin, ins, pen, sap, insp, keg, photos = {}, year, month, pica = [], kkp, struktur, penyakit, kk, bmi } = ctx;
   const bulanLabel = `${BULAN[month]} ${year}`;
   const pptx = new PptxGenJS();
   pptx.layout = 'LAYOUT_WIDE'; pptx.title = `SHE Monthly Report ${bulanLabel}`; pptx.company = 'PT. REP';
@@ -131,12 +215,17 @@ export function buildDeck(PptxGenJS, ctx) {
   cover.addText('SHE MONTHLY REPORT', { x: 0.6, y: 2.75, w: 12, h: 0.9, fontSize: 38, bold: true, color: 'FFFFFF', fontFace: 'Arial' });
   cover.addText(`${bulanLabel.toUpperCase()}  •  PT. RYAN EKA PRATAMA`, { x: 0.6, y: 3.6, w: 12, h: 0.6, fontSize: 18, color: 'DDE6F5', fontFace: 'Arial' });
 
+  imageSlide(pptx, 'MANPOWER', 'Struktur Organisasi REP Site PAMA IMM', struktur?.path ? photos[struktur.path] : null);
   tableSlides(pptx, 'MANPOWER', 'Daftar Karyawan Aktif', T.aktif.head, T.aktif.rows);
-  tableSlides(pptx, 'MANPOWER', T.masuk.title, T.masuk.head, T.masuk.rows);
-  tableSlides(pptx, 'MANPOWER', 'Daftar Manpower: Rencana vs Aktual', T.manpower.head, T.manpower.rows);
+  masukKeluarSlides(pptx, T, bulanLabel);
+  tableSlides(pptx, 'MANPOWER', 'Daftar Manpower', T.manpower.head, T.manpower.rows);
+  tableSlides(pptx, 'MANPOWER', 'PICA Kebutuhan Manpower', ['NO', 'PROBLEMS / PERMASALAHAN', 'CORRECTIVE ACTION / TINDAKAN PERBAIKAN', 'PIC', 'DUE DATE', 'STATUS'],
+    pica.map(x => [x.No, x.Problem, x.Action || '', x.PIC || '', dtx(x['Due Date']), x.Status || '']));
   if (T.pengawas.rows.length) tableSlides(pptx, 'MANPOWER', T.pengawas.title, T.pengawas.head, T.pengawas.rows);
   T.highrisk.filter(g => g.rows.length).forEach(g => tableSlides(pptx, 'MANPOWER', g.title, g.head, g.rows));
-  T.unit.filter(g => g.rows.length).forEach(g => tableSlides(pptx, 'UNIT', g.title, g.head, g.rows));
+  // Unit dengan keterangan off hire tidak ditampilkan di PowerPoint; nomor urut disusun ulang.
+  T.unit.map(g => ({ ...g, rows: g.rows.filter(r => !/off\s*hire/i.test(txt(r[r.length - 1]))).map((r, i) => [i + 1, ...r.slice(1)]) }))
+    .filter(g => g.rows.length).forEach(g => tableSlides(pptx, 'UNIT', g.title, g.head, g.rows));
   tableSlides(pptx, 'SHE PERFORMANCE', `SHE Performance Monitoring • ${bulanLabel}`, ['DESCRIPTION', 'OBJECTIVE', 'ACTUAL', 'YEAR TO DATE', 'COMMENTS'],
     kin.map((r, i) => [...r, i === 0 ? (stat[month]?.catatan || '') : '']), { fs: 14, rowH: 0.5, align: ['left', 'center', 'center', 'center', 'left'] });
   statSlide(pptx, stat, year);
@@ -147,12 +236,29 @@ export function buildDeck(PptxGenJS, ctx) {
     pen.map((x, i) => [i + 1, fd(x.d), x.nama, x.nrp, x.dept, x.jabatan, x.desk, x.sanksi, x.ket]));
   tableSlides(pptx, 'SHE INCIDENT', 'Rekapitulasi Kejadian Berbahaya dan Kecelakaan Kerja', ['No', 'Nomor kecelakaan', 'Tanggal', 'Waktu', 'Lokasi', 'Kronologis kejadian berbahaya', 'Akibat kejadian', 'Dilaporkan ke KaIT', 'Catatan'],
     ins.filter(x => KRITIS.includes(x.Kategori)).map((x, i) => [i + 1, x['Nomor Kecelakaan'] || '', fd(x.d), x.Waktu || '', x.Lokasi || '', x.Uraian || '', x.Akibat || '', x['Dilaporkan ke KaIT'] || '', x.Catatan || '']));
+  if (penyakit) {
+    tableSlides(pptx, 'SHE KESEHATAN', `Rekapitulasi Penyakit Akibat Kerja ${year}`, PEN_HEAD, penyakitRows(penyakit.pak));
+    tableSlides(pptx, 'SHE KESEHATAN', `Rekapitulasi Kejadian Akibat Penyakit Tenaga Kerja ${year}`, PEN_HEAD, penyakitRows(penyakit.kaptk));
+  }
+  if (keg && keg.all.length) kegiatanSlides(pptx, keg, photos, bulanLabel);
+  if (kkp && (kkp.head || kkp.lalu.length || kkp.ini.length)) kkpSlides(pptx, kkp, photos, bulanLabel);
   if (sap && sap.rows.length) {
     const head = ['No', 'Nama', ...SAP_KAT.flatMap(([, n]) => [`${n} plan`, `${n} actual`])];
     const rows = sap.rows.map((r, i) => [i + 1, r.Nama, ...SAP_KAT.flatMap(([k]) => [r[`${k} Plan`] ?? '', r[`${k} Actual`] ?? ''])]);
     rows.push(['', 'TOTAL', ...SAP_KAT.flatMap(([k]) => [sap.tot[k].plan, sap.tot[k].actual])]);
     rows.push(['', `ACH (keseluruhan ${pctTxt(sap.overall)})`, ...SAP_KAT.flatMap(([k]) => [pctTxt(sap.ach[k]), ''])]);
     tableSlides(pptx, 'SHE SAP', `Safety Accountability Program (SAP) • ${bulanLabel}`, head, rows);
+  }
+  if (kk && kk.n) {
+    tableSlides(pptx, 'SHE KESEHATAN', `Monitoring Kontrol Kritis Kronis • ${bulanLabel}`, ['NO', 'NRP', 'NRPSAP', 'NAMA KARYAWAN', 'USIA', 'JABATAN', 'P1 HASIL KUNJUNGAN', 'P1 CATATAN PENGOBATAN', 'P1 KONSUMSI OBAT', 'P2 TANGGAL', 'P2 TEMPAT', 'P2 HASIL KUNJUNGAN', 'P2 CATATAN PENGOBATAN', 'P2 KONSUMSI OBAT', 'STATUS'],
+      kk.rows.map(x => [x.No, x.NRP, x.NRPSAP, x.Nama, x.Usia, x.Jabatan, x['P1 Hasil'] || '', x['P1 Catatan'] || '', x['P1 Obat'] || '', dtx(x['P2 Tanggal']), x['P2 Tempat'] || '', x['P2 Hasil'] || '', x['P2 Catatan'] || '', x['P2 Obat'] || '', x.Status || '']));
+    tableSlides(pptx, 'SHE KESEHATAN', 'Monitoring Kontrol Kritis Kronis • Ringkasan', RINGKAS_HEAD, ringkasKe('KK', kk), { fs: 12, rowH: 0.5 });
+  }
+  if (bmi && bmi.n) {
+    const b = v => (v === null ? '' : { t: v.toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 }), tone: bmiTone(v) });
+    tableSlides(pptx, 'SHE KESEHATAN', `Monitoring Kontrol BMI • ${bulanLabel}`, ['NO', 'NRP', 'NAMA KARYAWAN', 'JABATAN', 'W1&2 TEMPAT', 'TB (M)', 'BB', 'BMI', 'W3&4 TGL KONTROL', 'TEMPAT', 'TB (M)', 'BB', 'BMI', 'STATUS'],
+      bmi.rows.map(x => [x.No, x.NRP, x.Nama, x.Jabatan, x['W12 Tempat'] || '', x['W12 TB'] || '', x['W12 BB'] || '', b(x.bmi1), dtx(x['W34 Tanggal']), x['W34 Tempat'] || '', x['W34 TB'] || '', x['W34 BB'] || '', b(x.bmi2), x.Status || '']));
+    tableSlides(pptx, 'SHE KESEHATAN', 'Monitoring Kontrol BMI • Ringkasan', RINGKAS_HEAD, ringkasKe('BMI', bmi), { fs: 12, rowH: 0.5 });
   }
   inspeksiSlide(pptx, insp || [], year, month);
   return pptx;

@@ -41,7 +41,7 @@ function empOf(r) {
     resigned: isResigned(r), resign: resignRaw, status: txt(val(r, 'Status Karyawan')),
     jk: txt(pick(r, /jenis\s*kelamin|^jk$|gender/i)), agama: txt(pick(r, /agama/i)), darah: txt(pick(r, /gol.*darah|^darah$/i)),
     email: txt(pick(r, /e-?mail/i)), alamat: txt(pick(r, /alamat/i)), kontak: txt(pick(r, /contact|kontak|telp|telepon|no\.?\s*hp|phone/i)),
-    ket: txt(pick(r, /^(keterangan|ket)\b/i)), row: r
+    ket: txt(pick(r, /^(keterangan|ket)\b/i)), alasan: txt(pick(r, /alasan|jenis\s*resign|status\s*resign|ket\w*\s*resign/i)), row: r
   };
 }
 
@@ -55,6 +55,7 @@ export function buildLaporan(data, year, month, now = new Date()) {
   const all = rowsOf(data, 'Data_Karyawan').map(empOf);
   const aktif = all.filter(e => activeAt(e, asOf)).sort((a, b) => (a.masuk || 0) - (b.masuk || 0));
   const masuk = all.filter(e => e.masuk && e.masuk >= start && e.masuk <= end).sort((a, b) => a.masuk - b.masuk);
+  const keluar = all.filter(e => e.resigned && e.resign && e.resign >= start && e.resign <= end).sort((a, b) => a.resign - b.resign);
 
   const activeIds = new Set(); const knownIds = new Set();
   all.forEach(e => [e.amodi, e.nrp].filter(Boolean).map(norm).forEach(i => { knownIds.add(i); if (activeAt(e, asOf)) activeIds.add(i); }));
@@ -87,15 +88,17 @@ export function buildLaporan(data, year, month, now = new Date()) {
     return { grup: grup(r), nrp: txt(val(r, 'NRP', 'AMODI')), nama: txt(val(r, 'Nama', 'NAMA')), jabatan: txt(val(r, 'Jabatan', 'JABATAN')), kompetensi: txt(val(r, 'Kompetensi')), kategori: txt(val(r, 'Kategori')), reg: txt(val(r, 'No. Registrasi')), exp, ket: txt(val(r, 'Keterangan')) };
   });
 
-  // Authority high risk: karyawan dengan tanggal HighRisk terisi, dipisah per jabatan A2B / DT.
-  const highrisk = { a2b: [], dt: [], lain: [] };
+  // Authority high risk: seluruh operator aktif per kelompok (DT, atau A2B = alat berat: excavator, bulldozer, dozer),
+  // termasuk yang belum punya tanggal HighRisk (tampil N/A), seperti di laporan.
+  const highrisk = { a2b: [], dt: [] };
   aktif.forEach(e => {
-    const kh = keyOf(e.row, 'highrisk'); const hr = kh ? toDate(e.row[kh]) : null;
-    if (!hr) return;
-    const ka = keyOf(e.row, 'authority');
-    const item = { ...e, hr, auth: ka ? toDate(e.row[ka]) : null };
-    (/a2b/i.test(e.jabatan) ? highrisk.a2b : /\bdt\b|dump\s*truck/i.test(e.jabatan) ? highrisk.dt : highrisk.lain).push(item);
+    if (!/operator|driver/i.test(e.jabatan)) return;
+    const g = /\bdt\b|dump\s*truck/i.test(e.jabatan) ? 'dt' : /a2b|excavator|bulldozer|dozer/i.test(e.jabatan) ? 'a2b' : null;
+    if (!g) return;
+    const kh = keyOf(e.row, 'highrisk'); const ka = keyOf(e.row, 'authority');
+    highrisk[g].push({ ...e, hr: kh ? toDate(e.row[kh]) : null, auth: ka ? toDate(e.row[ka]) : null });
   });
+  Object.values(highrisk).forEach(l => l.sort((x, y) => x.nama.localeCompare(y.nama)));
 
   // Komisioning unit dan kendaraan.
   const mk = d => (d ? new Date(d.getFullYear() + 1, d.getMonth(), d.getDate()) : null);
@@ -121,10 +124,10 @@ export function buildLaporan(data, year, month, now = new Date()) {
   if (aktif.length) [['email', 'Email'], ['alamat', 'Alamat'], ['agama', 'Agama'], ['jk', 'Jenis kelamin'], ['darah', 'Golongan darah'], ['kontak', 'Kontak']].forEach(([k, l]) => { if (!aktif.some(e => e[k])) missing.push(l); });
 
   return {
-    year, month, asOf, aktif, masuk, manpower, mpPlan, mpAkt, kompAll, highrisk, unitGrup, lv, missing,
+    year, month, asOf, aktif, masuk, keluar, manpower, mpPlan, mpAkt, kompAll, highrisk, unitGrup, lv, missing,
     cards: {
-      aktif: aktif.length, masuk: masuk.length, mpRate: mpPlan > 0 ? (mpAkt / mpPlan) * 100 : null, mpKurang: Math.max(mpPlan - mpAkt, 0),
-      hr: highrisk.a2b.length + highrisk.dt.length + highrisk.lain.length, komisDue,
+      aktif: aktif.length, masuk: masuk.length, keluar: keluar.length, mpRate: mpPlan > 0 ? (mpAkt / mpPlan) * 100 : null, mpKurang: manpower.reduce((s, x) => s + (x.kurang || 0), 0),
+      hr: [...highrisk.a2b, ...highrisk.dt].filter(x => x.hr).length, komisDue,
       kompLewat: kompAll.filter(k => k.grup && k.exp && left(k.exp, asOf) < 0).length
     }
   };
@@ -138,8 +141,14 @@ export function tablesOf(L, { kontak = false, semuaKompetensi = false } = {}) {
     ...(kontak ? [e.email || '—', e.alamat || '—', e.kontak || '—'] : [])]);
   const kHead = ['No', 'AMODI', 'NRP', 'Nama', 'Jabatan', 'Tgl masuk', 'Masa kerja', 'Usia', 'Jenis kelamin', 'Agama', 'Gol. darah', ...(kontak ? ['Email', 'Alamat domisili', 'Kontak'] : [])];
 
-  const hr = list => list.map((e, i) => [i + 1, e.nrp || e.amodi || '—', e.nama, e.jabatan, fd(e.masuk), masaKerja(e.masuk, asOf), usia(e.lahir, asOf), dcell(e.hr, asOf), dcell(e.auth, asOf), e.ket]);
-  const hrHead = ['No', 'NRP', 'Nama', 'Jabatan', 'Tgl masuk', 'Masa kerja', 'Usia', 'High risk', 'Authority', 'Keterangan'];
+  const hr = list => list.map((e, i) => [i + 1, e.amodi || '—', e.nrp || '—', e.nama, e.jabatan, fd(e.masuk), masaKerja(e.masuk, asOf), usia(e.lahir, asOf),
+    ...(kontak ? [e.email || '—', e.kontak || '—'] : []), e.hr ? dcell(e.hr, asOf) : 'N/A', e.auth ? dcell(e.auth, asOf) : '—', e.ket]);
+  const hrHead = ['No', 'AMODI', 'NRP', 'Nama', 'Jabatan', 'Tgl masuk', 'Masa kerja', 'Usia', ...(kontak ? ['Email', 'Contact person'] : []), 'High risk', 'Authority', 'Keterangan'];
+  const ringkas = (label, list) => {
+    const belum = list.filter(e => !e.hr); const lama = belum.filter(e => (monthsBetween(e.masuk, asOf) ?? 0) >= 24).length;
+    return [label, list.filter(e => e.hr).length, belum.length ? { t: String(belum.length), tone: lama ? 'red' : 'amber' } : 0,
+      !belum.length ? '—' : lama ? { t: `${lama} orang masa kerja ≥ 2 tahun belum memiliki HR`, tone: 'red' } : 'Yang belum memiliki HR masa kerja <2 tahun'];
+  };
 
   const pengList = L.kompAll.filter(k => semuaKompetensi || k.grup).sort((a, b) => String(a.grup).localeCompare(String(b.grup)) || a.nama.localeCompare(b.nama));
   const typeUnit = u => `${u.eq.replace(/dump\s*truck/i, 'DT')} ${u.model}`.trim() || '—';
@@ -148,10 +157,14 @@ export function tablesOf(L, { kontak = false, semuaKompetensi = false } = {}) {
 
   return {
     aktif: { title: 'Daftar karyawan aktif', head: kHead, rows: karyawan(L.aktif) },
-    masuk: { title: `Daftar karyawan yang masuk, periode ${BULAN[L.month]} ${L.year}`, head: [...kHead.slice(0, 1), ...kHead.slice(1)], rows: karyawan(L.masuk) },
+    masuk: { title: `Daftar karyawan yang masuk, periode ${BULAN[L.month]} ${L.year}`, head: ['No', 'Nama', 'Jabatan', 'Tanggal masuk', 'Keterangan'], rows: L.masuk.map((e, i) => [i + 1, e.nama, e.jabatan, fd(e.masuk), e.ket || e.status || '']) },
+    keluar: { title: `Daftar karyawan yang keluar, periode ${BULAN[L.month]} ${L.year}`, head: ['No', 'Nama', 'Jabatan', 'Tanggal keluar', 'Keterangan'], rows: L.keluar.map((e, i) => [i + 1, e.nama, e.jabatan, fd(e.resign), e.alasan || e.ket || e.status || '']) },
     manpower: {
-      title: 'Daftar manpower: rencana vs aktual', head: ['No', 'Jabatan', 'Jumlah unit', 'Shift', 'Faktor X', 'Plan', 'Aktual', 'Kekurangan', 'Keterangan'],
-      rows: L.manpower.map((x, i) => [i + 1, x.jabatan, x.unit || '—', x.shift || '—', x.faktor || '—', x.plan ?? '—', x.akt ?? '—', x.kurang === null ? '—' : x.kurang ? { t: String(x.kurang), tone: 'red' } : 0, x.ket])
+      title: 'Daftar manpower: rencana vs aktual', head: ['No', 'Jabatan', 'Jumlah unit', 'Shift', 'Faktor X', 'Plan', 'Actual', 'Kekurangan / kelebihan', 'Keterangan'],
+      rows: [...L.manpower.map((x, i) => {
+        const s = x.plan !== null && x.akt !== null ? x.akt - x.plan : null;
+        return [i + 1, x.jabatan, x.unit || '—', x.shift || '—', x.faktor || '—', x.plan ?? '—', x.akt ?? '—', s === null ? '—' : { t: String(s), tone: s < 0 ? 'red' : s > 0 ? 'green' : undefined }, x.ket];
+      }), ...(L.manpower.length ? [['', 'JUMLAH', '', '', '', L.mpPlan, L.mpAkt, { t: String(L.mpAkt - L.mpPlan), tone: L.mpAkt < L.mpPlan ? 'red' : undefined }, '']] : [])]
     },
     pengawas: {
       title: semuaKompetensi ? 'Semua kompetensi (di luar lisensi)' : 'Pengawas operasional, pengawas teknik, dan tenaga teknis',
@@ -159,9 +172,9 @@ export function tablesOf(L, { kontak = false, semuaKompetensi = false } = {}) {
       rows: pengList.map((k, i) => [i + 1, k.grup || '—', k.nrp || '—', k.nama, k.jabatan, k.kompetensi || '—', k.reg || '—', dcell(k.exp, asOf), k.ket])
     },
     highrisk: [
-      { key: 'a2b', title: 'Authority high risk operator A2B', head: hrHead, rows: hr(L.highrisk.a2b) },
+      { key: 'a2b', title: 'Authority high risk operator A2B (excavator dan bulldozer)', head: hrHead, rows: hr(L.highrisk.a2b) },
       { key: 'dt', title: 'Authority high risk operator DT', head: hrHead, rows: hr(L.highrisk.dt) },
-      ...(L.highrisk.lain.length ? [{ key: 'lain', title: 'Authority high risk, jabatan lain', head: hrHead, rows: hr(L.highrisk.lain) }] : [])
+      { key: 'ringkasan', title: 'Jumlah operator yang belum memiliki authority high risk DT & A2B', head: ['Jabatan', 'Memiliki HR', 'Belum memiliki HR', 'Keterangan'], rows: [ringkas('Operator DT', L.highrisk.dt), ringkas('Operator A2B', L.highrisk.a2b)].map((r, i) => [i + 1, ...r]).map(r => r.slice(1)) }
     ],
     unit: [
       { key: 'lv', title: 'Komisioning sarana LV & Bus', head: ['No', 'No lambung (CN)', 'Type mobil', 'No. polisi', 'Akses', 'Shift', 'Driver (Ya/Tidak)', 'Komisioning (expired)', 'Pajak', 'STNK', 'KIR', 'Keterangan'],
