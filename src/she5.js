@@ -110,8 +110,14 @@ function peopleOf(data, module, idKeys, y, m) {
   return { rows, stored, roster, only, carried, from };
 }
 
+/** Status otomatis: periode 1 (tanggal dan tempat P1 terisi), periode 2 (hanya P2 terisi), rutin (keduanya terisi). Bila belum ada yang terisi, dipakai status tersimpan. */
+const terisi = (a, b) => Boolean(String(a ?? '').trim() && String(b ?? '').trim());
+export const statusKontrol = (r, k1, k2) => {
+  const p1 = terisi(r[`${k1} Tanggal`], r[`${k1} Tempat`]); const p2 = terisi(r[`${k2} Tanggal`], r[`${k2} Tempat`]);
+  return p1 && p2 ? 'Rutin' : p1 ? 'Periode 1' : p2 ? 'Periode 2' : (r.Status || '');
+};
 export function buildKK(data, y, m) {
-  const P0 = peopleOf(data, M5.kk, KK_ID, y, m); const { rows, stored, roster, only } = P0;
+  const P0 = peopleOf(data, M5.kk, KK_ID, y, m); const { stored, roster, only } = P0; const rows = P0.rows.map(r => ({ ...r, Status: statusKontrol(r, 'P1', 'P2') }));
   const p1 = rows.filter(r => r['P1 Tanggal'] || r['P1 Hasil']).length; const p2 = rows.filter(r => r['P2 Tanggal'] || r['P2 Hasil']).length;
   return { rows, stored, roster, only, carried: P0.carried, from: P0.from, n: rows.length, p1, p2, a1: ach(p1, rows.length), a2: ach(p2, rows.length), mtd: ach(p1 + p2, rows.length * 2) };
 }
@@ -120,7 +126,7 @@ export const bmiOf = (tb, bb) => { const h = n0(tb); const w = n0(bb); return h 
 export const bmiTone = v => (v === null ? undefined : v >= 30 ? 'red' : v >= 25 ? 'amber' : 'green');
 export function buildBMI(data, y, m) {
   const P = peopleOf(data, M5.bmi, BMI_ID, y, m);
-  const rows = P.rows.map(r => ({ ...r, bmi1: bmiOf(r['W12 TB'], r['W12 BB']), bmi2: bmiOf(r['W34 TB'], r['W34 BB']) }));
+  const rows = P.rows.map(r => ({ ...r, Status: statusKontrol(r, 'W12', 'W34'), bmi1: bmiOf(r['W12 TB'], r['W12 BB']), bmi2: bmiOf(r['W34 TB'], r['W34 BB']) }));
   const p1 = rows.filter(r => r.bmi1 !== null).length; const p2 = rows.filter(r => r.bmi2 !== null).length;
   return { rows, stored: P.stored, roster: P.roster, only: P.only, carried: P.carried, from: P.from, n: rows.length, p1, p2, a1: ach(p1, rows.length), a2: ach(p2, rows.length), mtd: ach(p1 + p2, rows.length * 2) };
 }

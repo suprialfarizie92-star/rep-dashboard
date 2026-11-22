@@ -290,18 +290,19 @@ function usePeopleOps({ module, idKeys, A, year, month, run }) {
 const PromoteBar = ({ A, canWrite, onPromote }) => (canWrite && A.only.length > 0 ? <div className="lap-note" style={{ margin: '10px 0' }}>{A.only.length} orang di bulan ini belum masuk daftar tetap, jadi tidak akan muncul di bulan berikutnya. <button type="button" className="btn light mini" style={{ marginLeft: 8 }} onClick={onPromote}>Jadikan daftar tetap</button></div> : null);
 const RowBtns = ({ onEdit, onDel }) => <span style={{ display: 'flex', gap: 6 }}><EditBtn on={onEdit} /><button type="button" className="btn light mini" style={{ color: 'var(--alert)' }} onClick={onDel}>Hapus</button></span>;
 const initOf = (fields, row, dateKeys) => Object.fromEntries(fields.map(f => [f.key, dateKeys.includes(f.key) ? toIso(row?.[f.key]) : row?.[f.key] ?? '']));
+const stTone = v => (v === 'Rutin' ? 'green' : /^periode/i.test(v || '') ? 'blue' : v ? 'green' : 'gray');
 const tbm = (a, b) => (a || b ? `${a || ''}${a && b ? ' / ' : ''}${b || ''}` : '—');
 
 const kkFields = [
   { key: 'Nama', label: 'Nama karyawan', required: true }, { key: 'NRP', label: 'NRP' }, { key: 'NRPSAP', label: 'NRP SAP' }, { key: 'Usia', label: 'Usia', type: 'number' },
-  { key: 'Jabatan', label: 'Jabatan' }, { key: 'Perusahaan', label: 'Perusahaan' }, { key: 'Status', label: 'Status (bulan ini)' },
+  { key: 'Jabatan', label: 'Jabatan' }, { key: 'Perusahaan', label: 'Perusahaan' },
   { key: 'P1 Tanggal', label: 'P1: tanggal kunjungan', type: 'date' }, { key: 'P1 Tempat', label: 'P1: tempat' }, { key: 'P1 Hasil', label: 'P1: hasil kunjungan', type: 'textarea', wide: true },
   { key: 'P1 Catatan', label: 'P1: catatan pengobatan', type: 'textarea', wide: true }, { key: 'P1 Obat', label: 'P1: konsumsi obat' },
   { key: 'P2 Tanggal', label: 'P2: tanggal kunjungan', type: 'date' }, { key: 'P2 Tempat', label: 'P2: tempat' }, { key: 'P2 Hasil', label: 'P2: hasil kunjungan', type: 'textarea', wide: true },
   { key: 'P2 Catatan', label: 'P2: catatan pengobatan', type: 'textarea', wide: true }, { key: 'P2 Obat', label: 'P2: konsumsi obat' }
 ];
 const bmiFields = [
-  { key: 'Nama', label: 'Nama karyawan', required: true }, { key: 'NRP', label: 'NRP' }, { key: 'Jabatan', label: 'Jabatan' }, { key: 'Perusahaan', label: 'Perusahaan' }, { key: 'Status', label: 'Status (bulan ini)' },
+  { key: 'Nama', label: 'Nama karyawan', required: true }, { key: 'NRP', label: 'NRP' }, { key: 'Jabatan', label: 'Jabatan' }, { key: 'Perusahaan', label: 'Perusahaan' },
   { key: 'W12 Tanggal', label: 'W1&2: tanggal kontrol', type: 'date' }, { key: 'W12 Tempat', label: 'W1&2: tempat' }, { key: 'W12 TB', label: 'W1&2: TB (m)', type: 'number' }, { key: 'W12 BB', label: 'W1&2: BB (kg)', type: 'number' },
   { key: 'W34 Tanggal', label: 'W3&4: tanggal kontrol', type: 'date' }, { key: 'W34 Tempat', label: 'W3&4: tempat' }, { key: 'W34 TB', label: 'W3&4: TB (m)', type: 'number' }, { key: 'W34 BB', label: 'W3&4: BB (kg)', type: 'number' }
 ];
@@ -314,11 +315,11 @@ export function KkTab({ data, year, month, canWrite, onRefresh, onNotice }) {
   return (
     <section className="panel tr-panel">
       <ImportBar onFile={onFile} canWrite={canWrite} onAdd={() => setModal({})}><h3 className="lap-title" style={{ margin: 0 }}>Monitoring Kontrol Kritis Kronis • {BULAN[month]} {year}</h3></ImportBar>
-      <div className="lap-note" style={{ margin: '10px 0' }}>Data kesehatan karyawan: hanya untuk yang berwenang. Orang yang ditambahkan muncul setiap bulan (kosong bila belum ada hasil kontrol) sampai dihapus. {busy}</div>
+      <div className="lap-note" style={{ margin: '10px 0' }}>Data kesehatan karyawan: hanya untuk yang berwenang. Status otomatis: Periode 1 bila tanggal dan tempat P1 terisi, Periode 2 bila hanya P2 terisi, Rutin bila keduanya terisi. Orang yang ditambahkan muncul setiap bulan sampai dihapus. {busy}</div>
       <PromoteBar A={A} canWrite={canWrite} onPromote={ops.promote} />
       {A.carried && A.from && <div className="lap-note" style={{ margin: '10px 0' }}>Nama diteruskan dari {BULAN[A.from.m]} {A.from.y}. Isi hasil kontrol lewat tombol Ubah; daftar tetap tersimpan begitu Anda mengubah atau menambah orang.</div>}
       <Tbl head={['No', 'NRP', 'NRPSAP', 'Nama karyawan', 'Usia', 'Jabatan', 'P1: hasil kunjungan', 'P1: catatan pengobatan', 'P1: konsumsi obat', 'P2: tanggal', 'P2: tempat', 'P2: hasil kunjungan', 'P2: catatan pengobatan', 'P2: konsumsi obat', 'Status', ...(canWrite ? [''] : [])]}
-        rows={A.rows.map(x => [x.No, x.NRP, x.NRPSAP, x.Nama, x.Usia, x.Jabatan, x['P1 Hasil'] || '—', x['P1 Catatan'] || '—', x['P1 Obat'] || '—', dt(x['P2 Tanggal']), x['P2 Tempat'] || '—', x['P2 Hasil'] || '—', x['P2 Catatan'] || '—', x['P2 Obat'] || '—', <span key="s" className="badge" data-tone={x.Status ? 'green' : 'gray'}>{x.Status || '—'}</span>, ...(canWrite ? [<RowBtns key="a" onEdit={() => setModal({ row: x })} onDel={() => ops.del(x)} />] : [])])}
+        rows={A.rows.map(x => [x.No, x.NRP, x.NRPSAP, x.Nama, x.Usia, x.Jabatan, x['P1 Hasil'] || '—', x['P1 Catatan'] || '—', x['P1 Obat'] || '—', dt(x['P2 Tanggal']), x['P2 Tempat'] || '—', x['P2 Hasil'] || '—', x['P2 Catatan'] || '—', x['P2 Obat'] || '—', <span key="s" className="badge" data-tone={stTone(x.Status)}>{x.Status || '—'}</span>, ...(canWrite ? [<RowBtns key="a" onEdit={() => setModal({ row: x })} onDel={() => ops.del(x)} />] : [])])}
         empty={canWrite ? 'Belum ada orang. Klik "+ Tambah orang" atau "Impor dari Excel".' : 'Belum ada data KK.'} />
       {A.n > 0 && <Ringkas A={A} label="Jumlah karyawan kontrol KK" />}
       {modal && <FormModal eyebrow={`KK ${BULAN[month].toUpperCase()} ${year}`} title={modal.row ? `Ubah ${modal.row.Nama}` : 'Tambah orang'} fields={kkFields} init={initOf(kkFields, modal.row, ['P1 Tanggal', 'P2 Tanggal'])}
@@ -335,11 +336,11 @@ export function BmiTab({ data, year, month, canWrite, onRefresh, onNotice }) {
   return (
     <section className="panel tr-panel">
       <ImportBar onFile={onFile} canWrite={canWrite} onAdd={() => setModal({})}><h3 className="lap-title" style={{ margin: 0 }}>Monitoring Kontrol BMI • {BULAN[month]} {year}</h3></ImportBar>
-      <div className="lap-note" style={{ margin: '10px 0' }}>Data kesehatan karyawan: hanya untuk yang berwenang. BMI dihitung dari BB dibagi TB kuadrat (merah ≥ 30, kuning 25 sampai 29,9). Orang yang ditambahkan muncul setiap bulan sampai dihapus. {busy}</div>
+      <div className="lap-note" style={{ margin: '10px 0' }}>Data kesehatan karyawan: hanya untuk yang berwenang. BMI dihitung dari BB dibagi TB kuadrat (merah ≥ 30, kuning 25 sampai 29,9). Status otomatis: Periode 1 bila tanggal dan tempat W1&2 terisi, Periode 2 bila hanya W3&4 terisi, Rutin bila keduanya terisi. Orang yang ditambahkan muncul setiap bulan sampai dihapus. {busy}</div>
       <PromoteBar A={A} canWrite={canWrite} onPromote={ops.promote} />
       {A.carried && A.from && <div className="lap-note" style={{ margin: '10px 0' }}>Nama diteruskan dari {BULAN[A.from.m]} {A.from.y}. Isi hasil kontrol lewat tombol Ubah; daftar tetap tersimpan begitu Anda mengubah atau menambah orang.</div>}
       <Tbl head={['No', 'NRP', 'Nama karyawan', 'Jabatan', 'W1&2: tempat', 'TB (m)', 'BB', 'BMI', 'W3&4: tgl kontrol', 'Tempat', 'TB (m)', 'BB', 'BMI', 'Status', ...(canWrite ? [''] : [])]}
-        rows={A.rows.map(x => [x.No, x.NRP, x.Nama, x.Jabatan, x['W12 Tempat'] || '—', x['W12 TB'] || '—', x['W12 BB'] || '—', b(x.bmi1), dt(x['W34 Tanggal']), x['W34 Tempat'] || '—', x['W34 TB'] || '—', x['W34 BB'] || '—', b(x.bmi2), <span key="s" className="badge" data-tone={x.Status ? 'green' : 'gray'}>{x.Status || '—'}</span>, ...(canWrite ? [<RowBtns key="a" onEdit={() => setModal({ row: x })} onDel={() => ops.del(x)} />] : [])])}
+        rows={A.rows.map(x => [x.No, x.NRP, x.Nama, x.Jabatan, x['W12 Tempat'] || '—', x['W12 TB'] || '—', x['W12 BB'] || '—', b(x.bmi1), dt(x['W34 Tanggal']), x['W34 Tempat'] || '—', x['W34 TB'] || '—', x['W34 BB'] || '—', b(x.bmi2), <span key="s" className="badge" data-tone={stTone(x.Status)}>{x.Status || '—'}</span>, ...(canWrite ? [<RowBtns key="a" onEdit={() => setModal({ row: x })} onDel={() => ops.del(x)} />] : [])])}
         empty={canWrite ? 'Belum ada orang. Klik "+ Tambah orang" atau "Impor dari Excel".' : 'Belum ada data BMI.'} />
       {A.n > 0 && <Ringkas A={A} label="Jumlah karyawan kontrol BMI" />}
       {modal && <FormModal eyebrow={`BMI ${BULAN[month].toUpperCase()} ${year}`} title={modal.row ? `Ubah ${modal.row.Nama}` : 'Tambah orang'} fields={bmiFields} init={initOf(bmiFields, modal.row, ['W12 Tanggal', 'W34 Tanggal'])}
