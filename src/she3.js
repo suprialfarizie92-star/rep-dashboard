@@ -10,16 +10,29 @@ export const HARI = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
 const rowsOf = (data, m) => (data || []).filter(x => x.module === m).map(x => ({ row_index: x.row_index, ...(x.data || {}) }));
 const n0 = v => { const x = Number(String(v ?? '').replace(',', '.')); return Number.isFinite(x) ? x : 0; };
 
+/** Baris bulan terakhir yang punya data sebelum bulan (y, m); dipakai untuk meneruskan nama ke bulan baru. */
+export function prevMonthRows(all, y, m) {
+  const cur = y * 12 + m; let best = -1;
+  all.forEach(r => { const k = Number(r.Tahun) * 12 + Number(r.Bulan) - 1; if (Number.isFinite(k) && k < cur && k > best) best = k; });
+  return best < 0 ? { rows: [], from: null } : { rows: all.filter(r => Number(r.Tahun) * 12 + Number(r.Bulan) - 1 === best), from: { y: Math.floor(best / 12), m: best % 12 } };
+}
+
 /** Daftar SAP pada satu bulan, dengan total, ACH tiap kategori, dan ACH keseluruhan (rata-rata ACH kategori yang punya plan, seperti di file SAP). */
 export function buildSap(data, year, month) {
-  const rows = rowsOf(data, SAP_MOD).filter(r => Number(r.Tahun) === year && Number(r.Bulan) === month + 1).sort((a, b) => a.row_index - b.row_index);
+  const all = rowsOf(data, SAP_MOD);
+  let rows = all.filter(r => Number(r.Tahun) === year && Number(r.Bulan) === month + 1).sort((a, b) => a.row_index - b.row_index);
+  let virtual = false; let from = null;
+  if (!rows.length) {
+    const pv = prevMonthRows(all, year, month); from = pv.from;
+    rows = pv.rows.sort((a, b) => a.row_index - b.row_index).map((r, i) => ({ row_index: null, virtual: true, Tahun: year, Bulan: month + 1, No: i + 1, Nama: r.Nama })); virtual = rows.length > 0;
+  }
   const tot = {}; const ach = {};
   SAP_KAT.forEach(([k]) => {
     tot[k] = { plan: rows.reduce((s, r) => s + n0(r[`${k} Plan`]), 0), actual: rows.reduce((s, r) => s + n0(r[`${k} Actual`]), 0) };
     ach[k] = tot[k].plan > 0 ? tot[k].actual / tot[k].plan : null;
   });
   const vals = Object.values(ach).filter(v => v !== null);
-  return { rows, tot, ach, overall: vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null };
+  return { rows, virtual, from, tot, ach, overall: vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null };
 }
 
 /** Membaca sheet SAP dari file Excel (lembar "SAP"): nama di kolom C, pasangan Plan/Actual mulai kolom D. */
@@ -54,8 +67,16 @@ export const joinDays = arr => [...new Set(arr)].sort((a, b) => a - b).join(',')
 
 /** Jadwal inspeksi satu bulan: daftar inspeksi dengan hari rencana dan realisasi. */
 export function buildInspeksi(data, year, month) {
-  return rowsOf(data, INSP_MOD).filter(r => Number(r.Tahun) === year && Number(r.Bulan) === month + 1).sort((a, b) => Number(a.No) - Number(b.No))
-    .map(r => { const plan = parseDays(r.Plan); const actual = parseDays(r.Actual); return { ...r, plan, actual, done: plan.filter(d => actual.includes(d)).length, ach: plan.length ? plan.filter(d => actual.includes(d)).length / plan.length : null }; });
+  const all = rowsOf(data, INSP_MOD);
+  let base = all.filter(r => Number(r.Tahun) === year && Number(r.Bulan) === month + 1).sort((a, b) => Number(a.No) - Number(b.No));
+  let virtual = false; let from = null;
+  if (!base.length) {
+    const pv = prevMonthRows(all, year, month); from = pv.from;
+    base = pv.rows.sort((a, b) => Number(a.No) - Number(b.No)).map((r, i) => ({ row_index: null, virtual: true, Tahun: year, Bulan: month + 1, No: i + 1, Inspeksi: r.Inspeksi, Plan: '', Actual: '' })); virtual = base.length > 0;
+  }
+  const out = base.map(r => { const plan = parseDays(r.Plan); const actual = parseDays(r.Actual); return { ...r, plan, actual, done: plan.filter(d => actual.includes(d)).length, ach: plan.length ? plan.filter(d => actual.includes(d)).length / plan.length : null }; });
+  out.virtual = virtual; out.from = from;
+  return out;
 }
 export const inspeksiTotal = list => { const p = list.reduce((s, x) => s + x.plan.length, 0); const d = list.reduce((s, x) => s + x.done, 0); return { plan: p, done: d, ach: p ? d / p : null }; };
 export const pctTxt = v => (v === null || v === undefined ? '—' : `${(v * 100).toLocaleString('id-ID', { maximumFractionDigits: 1 })}%`);

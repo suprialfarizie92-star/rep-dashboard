@@ -20,6 +20,7 @@ export function SapTab({ sap, year, month, canWrite, onImport, onAdd, onEdit, on
         )}
         <input ref={ref} type="file" accept=".xlsx,.xls" className="sm-hidden" onChange={e => { const f = e.target.files?.[0]; if (f) onImport(f); e.target.value = ''; }} />
       </div>
+      {sap.virtual && sap.from && <div className="lap-note" style={{ margin: '10px 0' }}>Nama diteruskan dari {BULAN[sap.from.m]} {sap.from.y}. Isi plan dan actual lewat tombol Ubah; daftar tersimpan untuk bulan ini begitu Anda menyimpan.</div>}
       <p className="lap-hint">Achievement tiap kategori = total actual dibagi total plan. Achievement keseluruhan = rata-rata achievement kategori yang punya plan, sama seperti file SAP Anda.</p>
       <div className="tr-scroll">
         <table className="ttable">
@@ -29,7 +30,7 @@ export function SapTab({ sap, year, month, canWrite, onImport, onAdd, onEdit, on
           </thead>
           <tbody>
             {rows.map((r, i) => (
-              <tr key={r.row_index}>
+              <tr key={r.row_index ?? r.Nama}>
                 <td>{i + 1}</td><td><strong>{r.Nama}</strong></td>
                 {SAP_FIELDS.map(([key]) => <td key={key}>{r[key] === '' || r[key] === undefined ? '' : r[key]}</td>)}
                 {canWrite && <td><button type="button" className="btn light mini" onClick={() => onEdit(r)}><Icon name="edit" size={13} /> Ubah</button></td>}
@@ -79,6 +80,7 @@ export function InspeksiTab({ list, year, month, canWrite, onToggle, onAdd, onDe
           </span>
         )}
       </div>
+      {list.virtual && list.from && <div className="lap-note" style={{ margin: '10px 0' }}>Daftar inspeksi diteruskan dari {BULAN[list.from.m]} {list.from.y}. Tanggal plan dan actual masih kosong: klik kotak tanggalnya untuk mengisi.</div>}
       <p className="lap-hint">{canWrite ? 'Klik kotak pada baris Plan untuk menandai hari rencana, dan pada baris Actual untuk hari yang sudah dilakukan. ' : ''}Achievement = hari rencana yang sudah dilakukan dibagi jumlah hari rencana.</p>
       <div className="tr-scroll">
         <table className="ttable insp">
@@ -88,8 +90,8 @@ export function InspeksiTab({ list, year, month, canWrite, onToggle, onAdd, onDe
           </thead>
           <tbody>
             {list.flatMap(it => [
-              <tr key={`${it.row_index}p`}><td rowSpan={2}>{it.No}</td><td rowSpan={2}><strong>{it.Inspeksi}</strong></td><td>Plan</td>{days.map(d => cell(it, 'Plan', d))}<td>{it.plan.length}</td><td rowSpan={2}>{it.done}</td><td rowSpan={2}><span className="badge" data-tone={tone(it.ach)}>{pctTxt(it.ach)}</span></td>{canWrite && <td rowSpan={2}><button type="button" className="btn light mini" style={{ color: 'var(--alert)' }} onClick={() => onDelete(it)}>Hapus</button></td>}</tr>,
-              <tr key={`${it.row_index}a`}><td>Actual</td>{days.map(d => cell(it, 'Actual', d))}<td>{it.actual.length}</td></tr>
+              <tr key={`${it.row_index ?? it.Inspeksi}p`}><td rowSpan={2}>{it.No}</td><td rowSpan={2}><strong>{it.Inspeksi}</strong></td><td>Plan</td>{days.map(d => cell(it, 'Plan', d))}<td>{it.plan.length}</td><td rowSpan={2}>{it.done}</td><td rowSpan={2}><span className="badge" data-tone={tone(it.ach)}>{pctTxt(it.ach)}</span></td>{canWrite && <td rowSpan={2}><button type="button" className="btn light mini" style={{ color: 'var(--alert)' }} onClick={() => onDelete(it)}>Hapus</button></td>}</tr>,
+              <tr key={`${it.row_index ?? it.Inspeksi}a`}><td>Actual</td>{days.map(d => cell(it, 'Actual', d))}<td>{it.actual.length}</td></tr>
             ])}
             {list.length > 0 && <tr className="sm-group"><td colSpan={3}>TOTAL</td><td colSpan={n} /><td>{t.plan}</td><td>{t.done}</td><td><span className="badge" data-tone={tone(t.ach)}>{pctTxt(t.ach)}</span></td>{canWrite && <td />}</tr>}
           </tbody>

@@ -86,24 +86,34 @@ export const KK_ID = ['NRP', 'NRPSAP', 'Nama', 'Usia', 'Jabatan', 'Perusahaan'];
 export const BMI_ID = ['NRP', 'Nama', 'Jabatan', 'Perusahaan'];
 function peopleOf(data, module, idKeys, y, m) {
   const all = rowsOf(data, module);
-  const roster = all.filter(r => r.Roster).sort((a, b) => a.row_index - b.row_index);
   const stored = all.filter(r => !r.Roster && inMonth(r, y, m)).sort((a, b) => Number(a.No) - Number(b.No) || a.row_index - b.row_index);
+  const idOf = r => Object.fromEntries(idKeys.map(k => [k, r[k] ?? '']));
+  let roster = all.filter(r => r.Roster).sort((a, b) => a.row_index - b.row_index);
+  // Belum ada daftar tetap: nama diteruskan dari bulan terakhir yang punya data (tersimpan jadi daftar tetap saat ada perubahan pertama).
+  let carried = false; let from = null;
+  if (!roster.length) {
+    const hist = all.filter(r => !r.Roster); const cur = y * 12 + m; let best = -1;
+    hist.forEach(r => { const k = Number(r.Tahun) * 12 + Number(r.Bulan) - 1; if (Number.isFinite(k) && k <= cur && k > best) best = k; });
+    if (best >= 0) {
+      roster = hist.filter(r => Number(r.Tahun) * 12 + Number(r.Bulan) - 1 === best).sort((a, b) => Number(a.No) - Number(b.No) || a.row_index - b.row_index).map((r, i) => ({ ...idOf(r), row_index: i + 1 }));
+      carried = roster.length > 0; from = { y: Math.floor(best / 12), m: best % 12 };
+    }
+  }
   const byKey = new Map(stored.map(r => [personKey(r), r]));
   const used = new Set();
-  const idOf = r => Object.fromEntries(idKeys.map(k => [k, r[k] ?? '']));
   const fromRoster = roster.map(p => {
     const k = personKey(p); used.add(k); const mr = byKey.get(k);
     return mr ? { ...mr, ...idOf(p), pid: p.row_index, rowIdx: mr.row_index } : { Tahun: y, Bulan: m + 1, ...idOf(p), pid: p.row_index, rowIdx: null };
   });
   const only = stored.filter(r => !used.has(personKey(r))).map(r => ({ ...r, pid: null, rowIdx: r.row_index }));
   const rows = [...fromRoster, ...only].map((r, i) => ({ ...r, No: i + 1 }));
-  return { rows, stored, roster, only };
+  return { rows, stored, roster, only, carried, from };
 }
 
 export function buildKK(data, y, m) {
-  const { rows, stored, roster, only } = peopleOf(data, M5.kk, KK_ID, y, m);
+  const P0 = peopleOf(data, M5.kk, KK_ID, y, m); const { rows, stored, roster, only } = P0;
   const p1 = rows.filter(r => r['P1 Tanggal'] || r['P1 Hasil']).length; const p2 = rows.filter(r => r['P2 Tanggal'] || r['P2 Hasil']).length;
-  return { rows, stored, roster, only, n: rows.length, p1, p2, a1: ach(p1, rows.length), a2: ach(p2, rows.length), mtd: ach(p1 + p2, rows.length * 2) };
+  return { rows, stored, roster, only, carried: P0.carried, from: P0.from, n: rows.length, p1, p2, a1: ach(p1, rows.length), a2: ach(p2, rows.length), mtd: ach(p1 + p2, rows.length * 2) };
 }
 
 export const bmiOf = (tb, bb) => { const h = n0(tb); const w = n0(bb); return h && w ? w / (h * h) : null; };
@@ -112,7 +122,7 @@ export function buildBMI(data, y, m) {
   const P = peopleOf(data, M5.bmi, BMI_ID, y, m);
   const rows = P.rows.map(r => ({ ...r, bmi1: bmiOf(r['W12 TB'], r['W12 BB']), bmi2: bmiOf(r['W34 TB'], r['W34 BB']) }));
   const p1 = rows.filter(r => r.bmi1 !== null).length; const p2 = rows.filter(r => r.bmi2 !== null).length;
-  return { rows, stored: P.stored, roster: P.roster, only: P.only, n: rows.length, p1, p2, a1: ach(p1, rows.length), a2: ach(p2, rows.length), mtd: ach(p1 + p2, rows.length * 2) };
+  return { rows, stored: P.stored, roster: P.roster, only: P.only, carried: P.carried, from: P.from, n: rows.length, p1, p2, a1: ach(p1, rows.length), a2: ach(p2, rows.length), mtd: ach(p1 + p2, rows.length * 2) };
 }
 
 /** Pengawas & tenaga teknis: penyesuaian khusus laporan (hapus atau ubah baris) disimpan di SHE_Lampiran, Jenis = 'pengawas'. */

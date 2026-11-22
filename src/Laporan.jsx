@@ -26,6 +26,7 @@ const GROUPS = [
 ];
 
 function Cell({ c }) {
+  if (React.isValidElement(c)) return c;
   if (c !== null && typeof c === 'object') return <><span className="badge" data-tone={c.tone || 'gray'}>{c.t}</span>{c.sub && <span className="lap-sub">{c.sub}</span>}</>;
   return c;
 }
@@ -111,11 +112,16 @@ export default function Laporan({ data, loading, canPrivate, canWrite, canHealth
     const used = (data || []).filter(x => x.module === SHE.insiden).map(x => x.row_index);
     await saveRec(SHE.insiden, row ? row.row_index : Math.max(0, ...used) + 1, f);
   }, 'Insiden disimpan.');
+  const sapRecs = (list, ex) => list.filter(x => x !== ex).map((x, i) => ({ row_index: monthBase + i + 1, data: { Tahun: ym.y, Bulan: ym.m + 1, No: i + 1, Nama: x.Nama } }));
   const saveSapRow = (f, row) => run(async () => {
-    const used = sap.rows.map(r => r.row_index);
-    await saveRec(SAP_MOD, row ? row.row_index : Math.max(monthBase, ...used) + 1, { Tahun: ym.y, Bulan: ym.m + 1, No: row ? row.No : used.length + 1, Nama: String(f.Nama || '').trim().toUpperCase(), ...Object.fromEntries(SAP_FIELDS.map(([k]) => [k, num(f[k])])) });
+    const v = sap.virtual;
+    if (v) await saveMany(SAP_MOD, sapRecs(sap.rows));
+    const idxs = v ? sap.rows.map((_, i) => monthBase + i + 1) : sap.rows.map(r => r.row_index);
+    const idx = row ? (v ? monthBase + sap.rows.indexOf(row) + 1 : row.row_index) : Math.max(monthBase, ...idxs) + 1;
+    const no = row ? (v ? sap.rows.indexOf(row) + 1 : row.No) : sap.rows.length + 1;
+    await saveRec(SAP_MOD, idx, { Tahun: ym.y, Bulan: ym.m + 1, No: no, Nama: String(f.Nama || '').trim().toUpperCase(), ...Object.fromEntries(SAP_FIELDS.map(([k]) => [k, num(f[k])])) });
   }, 'Data SAP disimpan.');
-  const delSapRow = row => window.confirm(`Hapus ${row.Nama} dari SAP ${bulanLabel}?`) && run(() => deleteRec(SAP_MOD, row.row_index), 'Data SAP dihapus.');
+  const delSapRow = row => window.confirm(`Hapus ${row.Nama} dari SAP ${bulanLabel}?`) && run(() => (sap.virtual ? saveMany(SAP_MOD, sapRecs(sap.rows, row)) : deleteRec(SAP_MOD, row.row_index)), 'Data SAP dihapus.');
   const importSap = async file => {
     try {
       const p = parseSapSheet(XLSX, XLSX.read(await file.arrayBuffer(), { type: 'array' }));
@@ -126,7 +132,7 @@ export default function Laporan({ data, loading, canPrivate, canWrite, canHealth
       await run(async () => {
         await saveMany(SAP_MOD, p.rows.map((d, i) => ({ row_index: monthBase + i + 1, data: { Tahun: ym.y, Bulan: ym.m + 1, No: i + 1, ...d } })));
         const keep = new Set(p.rows.map((_, i) => monthBase + i + 1));
-        for (const r of sap.rows) if (!keep.has(r.row_index)) await deleteRec(SAP_MOD, r.row_index);
+        for (const r of sap.rows) if (r.row_index && !keep.has(r.row_index)) await deleteRec(SAP_MOD, r.row_index);
       }, `SAP ${bulanLabel} diimpor.`);
     } catch (e) { onNotice?.(`Impor SAP gagal: ${e.message}`); }
   };
@@ -136,6 +142,11 @@ export default function Laporan({ data, loading, canPrivate, canWrite, canHealth
     await saveRec(SHE.stat, rec.row_index, { ...rec.data, 'SAP Achievement': Math.round(Math.min(100, (sap.overall || 0) * 100) * 10) / 10 });
   }, 'SAP Achievement diterapkan ke Performance.');
   const toggleDay = async (it, key, day) => {
+    if (it.virtual) {
+      const cur = parseDays(it[key]); const val = joinDays(cur.includes(day) ? cur.filter(d => d !== day) : [...cur, day]);
+      try { await saveMany(INSP_MOD, inspRecs(insp).map(r => (r.data.Inspeksi === it.Inspeksi ? { ...r, data: { ...r.data, [key]: val } } : r))); await onRefresh?.(); } catch (e) { onNotice?.(`Gagal menyimpan: ${e.message}`); }
+      return;
+    }
     const orig = (data || []).find(r => r.module === INSP_MOD && r.row_index === it.row_index);
     if (!orig) return;
     const cur = parseDays(it[key]);
@@ -147,11 +158,13 @@ export default function Laporan({ data, loading, canPrivate, canWrite, canHealth
       const c = { ...ovIRef.current }; delete c[k]; putOvI(c); onNotice?.(`Gagal menyimpan: ${e.message}`);
     }
   };
+  const inspRecs = (list, ex) => list.filter(x => x !== ex).map((x, i) => ({ row_index: monthBase + i + 1, data: { Tahun: ym.y, Bulan: ym.m + 1, No: i + 1, Inspeksi: x.Inspeksi, Plan: '', Actual: '' } }));
   const addInsp = f => run(async () => {
+    if (insp.virtual) await saveMany(INSP_MOD, inspRecs(insp));
     const no = Math.max(0, ...insp.map(x => Number(x.No) || 0)) + 1;
     await saveRec(INSP_MOD, monthBase + no, { Tahun: ym.y, Bulan: ym.m + 1, No: no, Inspeksi: String(f.Inspeksi || '').trim().toUpperCase(), Plan: '', Actual: '' });
   }, 'Inspeksi ditambahkan.');
-  const delInsp = it => window.confirm(`Hapus inspeksi ${it.Inspeksi} dari ${bulanLabel}?`) && run(() => deleteRec(INSP_MOD, it.row_index), 'Inspeksi dihapus.');
+  const delInsp = it => window.confirm(`Hapus inspeksi ${it.Inspeksi} dari ${bulanLabel}?`) && run(() => (insp.virtual ? saveMany(INSP_MOD, inspRecs(insp, it)) : deleteRec(INSP_MOD, it.row_index)), 'Inspeksi dihapus.');
   const copyPrev = () => {
     const py = ym.m === 0 ? ym.y - 1 : ym.y; const pm = ym.m === 0 ? 11 : ym.m - 1;
     const prev = buildInspeksi(data, py, pm).filter(p => !insp.some(x => x.Inspeksi === p.Inspeksi));
