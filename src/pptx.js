@@ -163,7 +163,7 @@ function masukKeluarSlides(pptx, T, bulanLabel) {
   tab(T.keluar, T.keluar.rows, 4.75, `PERIODE : ${bulanLabel.toUpperCase()}`);
 }
 
-const dtx = v => (toIso(v) ? fd(new Date(`${toIso(v)}T00:00:00`)) : '');
+const dtx = v => (toIso(v) ? fd(new Date(`${toIso(v)}T00:00:00`)) : String(v ?? ''));
 const HARI_ID = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 
 function imageSlide(pptx, label, title, data) {

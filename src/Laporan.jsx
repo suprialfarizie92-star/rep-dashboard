@@ -9,7 +9,7 @@ import { InspeksiTab, SapTab, inspFields, sapFields } from './LaporanTahap3.jsx'
 import { KegiatanTab, fotoDataUrls } from './LaporanTahap4.jsx';
 import { buildKegiatan } from './she4.js';
 import { BmiTab, KkTab, KkpTab, PenyakitTab, PicaPanel, StrukturTab } from './LaporanTahap5.jsx';
-import { buildBMI, buildKK, buildKkp, buildPenyakit, buildPica, buildStruktur } from './she5.js';
+import { M5, buildBMI, buildKK, buildKkp, buildPengOv, buildPenyakit, buildPica, buildStruktur } from './she5.js';
 import { FormModal, Insiden, Kinerja, Penegakan, Statistik, deleteRec, insidenFields, saveMany, saveRec, statFields, targetFields, toIsoDate } from './LaporanShe.jsx';
 import './dashboard.css';
 import './pages.css';
@@ -56,7 +56,8 @@ export default function Laporan({ data, loading, canPrivate, canWrite, canHealth
   const [busy, setBusy] = useState(false);
 
   const L = useMemo(() => buildLaporan(data, ym.y, ym.m), [data, ym]);
-  const T = useMemo(() => tablesOf(L, { kontak: canPrivate && kontak, semuaKompetensi: semuaK }), [L, canPrivate, kontak, semuaK]);
+  const pengOv = useMemo(() => buildPengOv(data), [data]);
+  const T = useMemo(() => tablesOf(L, { kontak: canPrivate && kontak, semuaKompetensi: semuaK, pengOv }), [L, canPrivate, kontak, semuaK, pengOv]);
   const target = useMemo(() => targetOf(data, ym.y), [data, ym.y]);
   const stat = useMemo(() => buildStat(data, ym.y, target.faktor), [data, ym.y, target.faktor]);
   const kin = useMemo(() => buildKinerja(stat, target, ym.m), [stat, target, ym.m]);
@@ -93,6 +94,19 @@ export default function Laporan({ data, loading, canPrivate, canWrite, canHealth
     const keys = [...IND.map(([k]) => k), 'faktor'];
     for (let n = 0; n < keys.length; n += 1) await saveRec(SHE.target, ym.y * 100 + n + 1, { Tahun: ym.y, Kode: keys[n], Objective: f[keys[n]] ?? '' });
   }, `Target ${ym.y} disimpan.`);
+  const pengFields = [
+    { key: 'Kelompok', label: 'Kelompok', type: 'select', options: ['Pengawas Operasional', 'Pengawas Teknik', 'Tenaga Teknis', ''] },
+    { key: 'NRP', label: 'NRP' }, { key: 'Nama', label: 'Nama', required: true }, { key: 'Jabatan', label: 'Jabatan' },
+    { key: 'Kompetensi', label: 'Kompetensi', wide: true }, { key: 'Reg', label: 'No. registrasi' }, { key: 'Exp', label: 'Berlaku sampai', type: 'date' },
+    { key: 'Keterangan', label: 'Keterangan', type: 'textarea', wide: true }
+  ];
+  const pengIdx = key => pengOv.get(key)?.row_index ?? Math.max(100000, ...[...pengOv.values()].map(r => r.row_index)) + 1;
+  const savePeng = (f, item) => run(async () => {
+    await saveRec(M5.lamp, pengIdx(item.key), { ...(pengOv.get(item.key) ? (({ row_index, ...d }) => d)(pengOv.get(item.key)) : {}), Jenis: 'pengawas', Key: item.key, ...f });
+  }, 'Perubahan disimpan (hanya untuk laporan).');
+  const hidePeng = item => window.confirm(`Hapus ${item.nama} dari daftar pengawas & teknis di laporan?\n\nData asli di menu Data Kompetensi tidak ikut terhapus. Baris ini bisa dipulihkan kapan saja.`)
+    && run(async () => { await saveRec(M5.lamp, pengIdx(item.key), { ...(pengOv.get(item.key) ? (({ row_index, ...d }) => d)(pengOv.get(item.key)) : {}), Jenis: 'pengawas', Key: item.key, Hide: 1, Nama: item.nama }); }, `${item.nama} dihapus dari daftar laporan.`);
+  const restorePeng = item => run(() => deleteRec(M5.lamp, pengOv.get(item.key).row_index), `${item.nama} dipulihkan.`);
   const saveInsiden = (f, row) => run(async () => {
     const used = (data || []).filter(x => x.module === SHE.insiden).map(x => x.row_index);
     await saveRec(SHE.insiden, row ? row.row_index : Math.max(0, ...used) + 1, f);
@@ -180,7 +194,7 @@ export default function Laporan({ data, loading, canPrivate, canWrite, canHealth
       const extra = [...kkp.fotos.slice(0, 4), ...kkp.absen.slice(0, 1), ...(struktur?.path ? [struktur.path] : [])];
       const photos2 = { ...photos, ...(await fotoDataUrls(extra)) };
       const health = canHealth && withHealth;
-      await exportPptx({ T, stat, kin, ins, pen, sap, insp, keg, photos: photos2, year: ym.y, month: ym.m, pica: buildPica(data, ym.y, ym.m), kkp, struktur,
+      await exportPptx({ T, stat, kin, ins, pen, sap, insp, keg, photos: photos2, year: ym.y, month: ym.m, pica: buildPica(data), kkp, struktur,
         penyakit: { pak: buildPenyakit(data, ym.y, 'PAK', ym.m), kaptk: buildPenyakit(data, ym.y, 'KAPTK', ym.m) }, kk: health ? buildKK(data, ym.y, ym.m) : null, bmi: health ? buildBMI(data, ym.y, ym.m) : null });
     } catch (e) {
       onNotice?.(/pptxgenjs|dynamically imported|Failed to fetch/i.test(String(e.message)) ? 'Unduh PowerPoint butuh paket pptxgenjs. Jalankan: npm install pptxgenjs' : `Gagal membuat PowerPoint: ${e.message}`);
@@ -189,7 +203,6 @@ export default function Laporan({ data, loading, canPrivate, canWrite, canHealth
   const card = (v, label, tone) => <div className="dcard static" data-tone={tone}><b>{v}</b><span>{label}</span></div>;
   const c = L.cards;
   const cakupan = [
-    ['Struktur organisasi', 'hal. 2', 'Belum ada: unggah gambar (tahap 3)', false],
     ['Daftar karyawan aktif', 'hal. 3 sampai 5', `${L.aktif.length} karyawan`, L.aktif.length > 0],
     ['Karyawan yang masuk dan keluar', 'hal. 6', `${L.masuk.length} masuk, ${L.keluar.length} keluar`, true],
     ['Rencana vs aktual manpower', 'hal. 7', `${L.manpower.length} jabatan`, L.manpower.length > 0],
@@ -202,8 +215,8 @@ export default function Laporan({ data, loading, canPrivate, canWrite, canHealth
     ['SAP per orang', 'lampiran SAP', `${sap.rows.length} orang`, sap.rows.length > 0],
     ['Jadwal inspeksi', 'hal. 25', `${insp.length} inspeksi, ACH ${pctTxt(inspeksiTotal(insp).ach)}`, insp.length > 0],
     ['Kegiatan SHE (dengan foto)', 'hal. 20 sampai 22', `${buildKegiatan(data, ym.y, ym.m).all.length} kegiatan`, buildKegiatan(data, ym.y, ym.m).all.length > 0],
-    ['Meeting KKP level II (MOM, foto, absensi)', 'hal. 21', buildKkp(data, ym.y, ym.m).head ? `${buildKkp(data, ym.y, ym.m).ini.length} poin MOM` : 'Belum diisi', Boolean(buildKkp(data, ym.y, ym.m).head)],
-    ['PICA kebutuhan manpower', 'hal. 7', `${buildPica(data, ym.y, ym.m).length} baris`, buildPica(data, ym.y, ym.m).length > 0],
+    ['Meeting KKP level II (MOM, foto, absensi)', 'hal. 21', (() => { const k = buildKkp(data, ym.y, ym.m); return k.head || k.ini.length || k.lalu.length || k.fotos.length ? `${k.ini.length} poin MOM` : 'Belum diisi'; })(), (() => { const k = buildKkp(data, ym.y, ym.m); return Boolean(k.head || k.ini.length || k.lalu.length || k.fotos.length); })()],
+    ['PICA kebutuhan manpower', 'hal. 7', `${buildPica(data).length} baris dari Database Manpower`, buildPica(data).length > 0],
     ['Struktur organisasi', 'hal. 2', buildStruktur(data, ym.y, ym.m) ? 'Gambar terpasang' : 'Belum ada gambar', Boolean(buildStruktur(data, ym.y, ym.m))],
     ['Kontrol kritis kronis dan BMI', 'hal. 23 dan 24', canHealth ? `${buildKK(data, ym.y, ym.m).n} KK, ${buildBMI(data, ym.y, ym.m).n} BMI` : 'Akses terbatas', canHealth && buildKK(data, ym.y, ym.m).n > 0]
   ];
@@ -301,7 +314,17 @@ export default function Laporan({ data, loading, canPrivate, canWrite, canHealth
                 <label className="lap-check"><input type="checkbox" checked={semuaK} onChange={e => setSemuaK(e.target.checked)} /> Tampilkan semua kompetensi (tanpa filter pengawas)</label>
               </div>
               <p className="lap-hint">Dikelompokkan dari nama kompetensi/kategori di Data Kompetensi. Kalau ada yang tidak muncul, centang opsi di atas untuk melihat semua catatan, lalu beri tahu nama kompetensinya supaya pengelompokannya disesuaikan.</p>
-              <Tabel head={T.pengawas.head} rows={T.pengawas.rows} empty="Belum ada kompetensi yang cocok dengan kelompok pengawas atau tenaga teknis." />
+              <Tabel head={canWrite ? [...T.pengawas.head, ''] : T.pengawas.head}
+                rows={T.pengawas.rows.map((r, i) => (canWrite ? [...r, <span key="a" style={{ display: 'flex', gap: 6 }}>
+                  <button type="button" className="btn light mini" onClick={() => setModal({ type: 'peng', item: T.pengawas.items[i] })}><Icon name="edit" size={13} /> Ubah</button>
+                  <button type="button" className="btn light mini" style={{ color: 'var(--alert)' }} onClick={() => hidePeng(T.pengawas.items[i])}>Hapus</button></span>] : r))}
+                empty="Belum ada kompetensi yang cocok dengan kelompok pengawas atau tenaga teknis." />
+              {canWrite && T.pengawas.hidden.length > 0 && (
+                <div className="lap-note" style={{ marginTop: 12 }}>
+                  <b>Dihapus dari laporan ({T.pengawas.hidden.length}):</b>
+                  {T.pengawas.hidden.map(h => <div key={h.key} style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}><span>{h.nama} • {h.kompetensi || '—'}</span><button type="button" className="btn light mini" onClick={() => restorePeng(h)}>Pulihkan</button></div>)}
+                </div>
+              )}
             </section>
           )}
 
@@ -327,7 +350,7 @@ export default function Laporan({ data, loading, canPrivate, canWrite, canHealth
             </section>
           )}
 
-          {tab === 'kinerja' && <Kinerja rows={kin} month={ym.m} year={ym.y} canWrite={canWrite} onTarget={() => setModal({ type: 'target' })} catatan={stat[ym.m]?.catatan} />}
+          {tab === 'kinerja' && <Kinerja rows={kin} month={ym.m} year={ym.y} canWrite={canWrite} onEditData={() => setModal({ type: 'stat', i: ym.m })} onTarget={() => setModal({ type: 'target' })} catatan={stat[ym.m]?.catatan} />}
           {tab === 'statistik' && <Statistik stat={stat} year={ym.y} canWrite={canWrite} onEdit={i => setModal({ type: 'stat', i })} />}
           {tab === 'insiden' && <Insiden list={ins} sub={sub} setSub={setSub} canWrite={canWrite} bulanLabel={bulanLabel} onAdd={() => setModal({ type: 'insiden' })} onEdit={row => setModal({ type: 'insiden', row })} />}
           {tab === 'penegakan' && <Penegakan list={pen} bulanLabel={bulanLabel} />}
@@ -346,6 +369,11 @@ export default function Laporan({ data, loading, canPrivate, canWrite, canHealth
         const s = stat[modal.i]; const r = s?.rec || {};
         return <FormModal eyebrow={`STATISTIK INSIDEN ${ym.y}`} title={`Isi / ubah ${BULAN[modal.i]}`} fields={statFields} init={Object.fromEntries(statFields.map(x => [x.key, r[x.key] ?? '']))} onClose={() => setModal(null)} onSave={f => saveStat(modal.i, f)} />;
       })()}
+      {modal?.type === 'peng' && (
+        <FormModal eyebrow="PENGAWAS & TENAGA TEKNIS" title={`Ubah ${modal.item.nama}`} fields={pengFields}
+          init={{ Kelompok: modal.item.grup || '', NRP: modal.item.nrp || '', Nama: modal.item.nama || '', Jabatan: modal.item.jabatan || '', Kompetensi: modal.item.kompetensi || '', Reg: modal.item.reg || '', Exp: modal.item.exp ? toIsoDate(modal.item.exp) : '', Keterangan: modal.item.ket || '' }}
+          onClose={() => setModal(null)} onSave={f => savePeng(f, modal.item)} onDelete={() => { const it = modal.item; setModal(null); hidePeng(it); }} />
+      )}
       {modal?.type === 'sap' && (
         <FormModal eyebrow={`SAP ${bulanLabel.toUpperCase()}`} title={modal.row ? `Ubah ${modal.row.Nama}` : 'Tambah orang'} fields={sapFields}
           init={Object.fromEntries(sapFields.map(x => [x.key, modal.row?.[x.key] ?? '']))} onClose={() => setModal(null)} onSave={f => saveSapRow(f, modal.row)} onDelete={modal.row ? () => delSapRow(modal.row) : undefined} />

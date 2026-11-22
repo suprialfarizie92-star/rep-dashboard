@@ -11,7 +11,52 @@ const n0 = v => { const x = Number(String(v ?? '').replace(',', '.')); return Nu
 const clean = v => String(v ?? '').replace(/\s+/g, ' ').trim();
 export const pctN = v => (v === null || v === undefined ? '—' : `${(v * 100).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`);
 
-export const buildPica = (data, y, m) => rowsOf(data, M5.pica).filter(r => inMonth(r, y, m)).sort((a, b) => Number(a.No) - Number(b.No));
+/** PICA kebutuhan manpower: diambil langsung dari menu Database Manpower (modul Data_PICA), tanpa input ganda. */
+const pickKey = (r, re) => { const k = Object.keys(r).find(x => re.test(x) && r[x] !== '' && r[x] !== null && r[x] !== undefined); return k === undefined ? undefined : r[k]; };
+const isClosed = v => /(closed|close|selesai|complete|completed)/i.test(String(v ?? ''));
+export const buildPica = (data) => (data || []).filter(x => x.module === 'Data_PICA').map(x => x.data || {}).map((r, i) => {
+  const vals = Object.values(r).filter(v => v !== '' && v !== null && v !== undefined).map(String);
+  const due = pickKey(r, /target|due|deadline|selesai/i);
+  const st = pickKey(r, /^status$/i);
+  return {
+    No: i + 1,
+    Problem: String(pickKey(r, /temuan|masalah|isu|issue|gap|uraian|jabatan|posisi|item/i) ?? vals[0] ?? ''),
+    Action: String(pickKey(r, /tindak|action|rencana|progress|keterangan|deskripsi/i) ?? ''),
+    PIC: String(pickKey(r, /^pic/i) ?? ''),
+    'Due Date': due === undefined ? '' : (toIso(due) || String(due)),
+    Status: st === undefined ? 'Open' : (isClosed(st) ? 'Closed' : String(st))
+  };
+});
+
+/** MOM dari Excel/CSV: baris judul dicari otomatis, bagian "bulan lalu" / "bulan ini" dikenali dari baris pemisah. */
+export function parseMom(XLSX, wb) {
+  const out = [];
+  const remark = v => { const t = String(v ?? '').trim(); return /clos|selesai|done/i.test(t) ? 'Closed' : /continue|lanjut|progress|proses/i.test(t) ? 'Continue' : 'Open'; };
+  for (const name of wb.SheetNames) {
+    const grid = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: null, blankrows: false });
+    let cols = null; let sek = 'Bulan ini';
+    for (const row of grid) {
+      const cells = row.map(c => clean(c));
+      const filled = cells.filter(Boolean);
+      if (!filled.length) continue;
+      const hi = cells.findIndex(c => /problem|permasalahan|pembahasan|topik/i.test(c));
+      if (hi >= 0 && cells.some(c => /action|tindak/i.test(c))) {
+        const f = re => cells.findIndex(c => re.test(c));
+        cols = { problem: hi, action: f(/action|tindak/i), pic: f(/^pic/i), issue: f(/issue|terbit|tgl.*mulai/i), due: f(/due|target/i), remark: f(/remark|status|ket/i) };
+        continue;
+      }
+      if (filled.length <= 2 && /bulan\s*lalu|previous|last\s*month/i.test(filled.join(' '))) { sek = 'Bulan lalu'; continue; }
+      if (filled.length <= 2 && /bulan\s*ini|current|this\s*month/i.test(filled.join(' '))) { sek = 'Bulan ini'; continue; }
+      if (!cols) continue;
+      const problem = cells[cols.problem];
+      if (!problem) continue;
+      const g = i => (i >= 0 ? row[i] : '');
+      out.push({ Seksi: sek, Problem: problem, Action: clean(g(cols.action)), PIC: clean(g(cols.pic)), 'Issue Date': toIso(g(cols.issue)), 'Due Date': toIso(g(cols.due)), Remark: remark(g(cols.remark)) });
+    }
+    if (out.length) break;
+  }
+  return out;
+}
 
 /** Rekap penyakit tahunan (PAK atau KAPTK): per bulan sampai bulan terpilih; bulan tanpa kejadian tampil NIHIL. */
 export function buildPenyakit(data, y, jenis, upTo) {
@@ -33,21 +78,46 @@ export function buildStruktur(data, y, m) {
 }
 
 const ach = (a, p) => (p > 0 ? a / p : null);
-/** Monitoring kontrol kritis kronis: satu baris per karyawan, dengan plan/actual tiap periode. */
+
+/** Daftar orang tetap (roster) disimpan di modul yang sama dengan data bulanan, dengan penanda Roster = 1.
+ *  Orang di roster muncul setiap bulan (kosong bila belum ada data) sampai dihapus. */
+export const personKey = r => String(r?.NRP || '').trim().toUpperCase() || String(r?.Nama || '').trim().toUpperCase();
+export const KK_ID = ['NRP', 'NRPSAP', 'Nama', 'Usia', 'Jabatan', 'Perusahaan'];
+export const BMI_ID = ['NRP', 'Nama', 'Jabatan', 'Perusahaan'];
+function peopleOf(data, module, idKeys, y, m) {
+  const all = rowsOf(data, module);
+  const roster = all.filter(r => r.Roster).sort((a, b) => a.row_index - b.row_index);
+  const stored = all.filter(r => !r.Roster && inMonth(r, y, m)).sort((a, b) => Number(a.No) - Number(b.No) || a.row_index - b.row_index);
+  const byKey = new Map(stored.map(r => [personKey(r), r]));
+  const used = new Set();
+  const idOf = r => Object.fromEntries(idKeys.map(k => [k, r[k] ?? '']));
+  const fromRoster = roster.map(p => {
+    const k = personKey(p); used.add(k); const mr = byKey.get(k);
+    return mr ? { ...mr, ...idOf(p), pid: p.row_index, rowIdx: mr.row_index } : { Tahun: y, Bulan: m + 1, ...idOf(p), pid: p.row_index, rowIdx: null };
+  });
+  const only = stored.filter(r => !used.has(personKey(r))).map(r => ({ ...r, pid: null, rowIdx: r.row_index }));
+  const rows = [...fromRoster, ...only].map((r, i) => ({ ...r, No: i + 1 }));
+  return { rows, stored, roster, only };
+}
+
 export function buildKK(data, y, m) {
-  const rows = rowsOf(data, M5.kk).filter(r => inMonth(r, y, m)).sort((a, b) => Number(a.No) - Number(b.No));
+  const { rows, stored, roster, only } = peopleOf(data, M5.kk, KK_ID, y, m);
   const p1 = rows.filter(r => r['P1 Tanggal'] || r['P1 Hasil']).length; const p2 = rows.filter(r => r['P2 Tanggal'] || r['P2 Hasil']).length;
-  return { rows, n: rows.length, p1, p2, a1: ach(p1, rows.length), a2: ach(p2, rows.length), mtd: ach(p1 + p2, rows.length * 2) };
+  return { rows, stored, roster, only, n: rows.length, p1, p2, a1: ach(p1, rows.length), a2: ach(p2, rows.length), mtd: ach(p1 + p2, rows.length * 2) };
 }
 
 export const bmiOf = (tb, bb) => { const h = n0(tb); const w = n0(bb); return h && w ? w / (h * h) : null; };
 export const bmiTone = v => (v === null ? undefined : v >= 30 ? 'red' : v >= 25 ? 'amber' : 'green');
 export function buildBMI(data, y, m) {
-  const rows = rowsOf(data, M5.bmi).filter(r => inMonth(r, y, m)).sort((a, b) => Number(a.No) - Number(b.No))
-    .map(r => ({ ...r, bmi1: bmiOf(r['W12 TB'], r['W12 BB']), bmi2: bmiOf(r['W34 TB'], r['W34 BB']) }));
+  const P = peopleOf(data, M5.bmi, BMI_ID, y, m);
+  const rows = P.rows.map(r => ({ ...r, bmi1: bmiOf(r['W12 TB'], r['W12 BB']), bmi2: bmiOf(r['W34 TB'], r['W34 BB']) }));
   const p1 = rows.filter(r => r.bmi1 !== null).length; const p2 = rows.filter(r => r.bmi2 !== null).length;
-  return { rows, n: rows.length, p1, p2, a1: ach(p1, rows.length), a2: ach(p2, rows.length), mtd: ach(p1 + p2, rows.length * 2) };
+  return { rows, stored: P.stored, roster: P.roster, only: P.only, n: rows.length, p1, p2, a1: ach(p1, rows.length), a2: ach(p2, rows.length), mtd: ach(p1 + p2, rows.length * 2) };
 }
+
+/** Pengawas & tenaga teknis: penyesuaian khusus laporan (hapus atau ubah baris) disimpan di SHE_Lampiran, Jenis = 'pengawas'. */
+export const pengawasKey = k => [k.nrp, k.nama, k.kompetensi, k.reg].map(x => String(x || '').trim().toLowerCase()).join('|');
+export const buildPengOv = data => new Map(rowsOf(data, M5.lamp).filter(r => r.Jenis === 'pengawas' && r.Key).map(r => [r.Key, r]));
 
 function sheetRows(XLSX, ws) {
   const ref = XLSX.utils.decode_range(ws['!ref']); ref.s.r = 0; ref.s.c = 0; ws['!ref'] = XLSX.utils.encode_range(ref);

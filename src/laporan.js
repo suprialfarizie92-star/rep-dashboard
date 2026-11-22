@@ -134,7 +134,7 @@ export function buildLaporan(data, year, month, now = new Date()) {
 }
 
 /** Tabel tiap bagian laporan (kepala kolom + baris). Dipakai untuk tampilan dan untuk ekspor Excel. */
-export function tablesOf(L, { kontak = false, semuaKompetensi = false } = {}) {
+export function tablesOf(L, { kontak = false, semuaKompetensi = false, pengOv = new Map() } = {}) {
   const { asOf } = L;
   const idCols = e => [e.amodi || '—', e.nrp || '—'];
   const karyawan = list => list.map((e, i) => [i + 1, ...idCols(e), e.nama, e.jabatan, fd(e.masuk), masaKerja(e.masuk, asOf), usia(e.lahir, asOf), e.jk || '—', e.agama || '—', e.darah || '—',
@@ -150,7 +150,14 @@ export function tablesOf(L, { kontak = false, semuaKompetensi = false } = {}) {
       !belum.length ? '—' : lama ? { t: `${lama} orang masa kerja ≥ 2 tahun belum memiliki HR`, tone: 'red' } : 'Yang belum memiliki HR masa kerja <2 tahun'];
   };
 
-  const pengList = L.kompAll.filter(k => semuaKompetensi || k.grup).sort((a, b) => String(a.grup).localeCompare(String(b.grup)) || a.nama.localeCompare(b.nama));
+  const pengKey = k => [k.nrp, k.nama, k.kompetensi, k.reg].map(x => String(x || '').trim().toLowerCase()).join('|');
+  const pengBase = L.kompAll.filter(k => semuaKompetensi || k.grup).map(k => ({ ...k, key: pengKey(k) }));
+  const pengHidden = pengBase.filter(k => pengOv.get(k.key)?.Hide);
+  const pengList = pengBase.filter(k => !pengOv.get(k.key)?.Hide).map(k => {
+    const o = pengOv.get(k.key); if (!o) return k;
+    const f = (a, b) => (o[a] !== undefined && o[a] !== null ? String(o[a]) : b);
+    return { ...k, grup: f('Kelompok', k.grup), nrp: f('NRP', k.nrp), nama: f('Nama', k.nama), jabatan: f('Jabatan', k.jabatan), kompetensi: f('Kompetensi', k.kompetensi), reg: f('Reg', k.reg), ket: f('Keterangan', k.ket), exp: o.Exp ? new Date(`${o.Exp}T00:00:00`) : k.exp, edited: true };
+  }).sort((a, b) => String(a.grup).localeCompare(String(b.grup)) || a.nama.localeCompare(b.nama));
   const typeUnit = u => `${u.eq.replace(/dump\s*truck/i, 'DT')} ${u.model}`.trim() || '—';
   const unitRows = list => list.map((u, i) => [i + 1, u.cn || '—', typeUnit(u), u.akses || '—', u.shift || '—', u.opt || '—', fd(u.kom), dcell(u.exp, asOf), u.ket]);
   const unitHead = ['No', 'No lambung (CN)', 'Type unit', 'Akses', 'Shift', 'Operator (Ya/Tidak)', 'Komisioning', 'Expired', 'Keterangan'];
@@ -169,7 +176,8 @@ export function tablesOf(L, { kontak = false, semuaKompetensi = false } = {}) {
     pengawas: {
       title: semuaKompetensi ? 'Semua kompetensi (di luar lisensi)' : 'Pengawas operasional, pengawas teknik, dan tenaga teknis',
       head: ['No', 'Kelompok', 'NRP', 'Nama', 'Jabatan', 'Kompetensi', 'No. registrasi', 'Berlaku sampai', 'Keterangan'],
-      rows: pengList.map((k, i) => [i + 1, k.grup || '—', k.nrp || '—', k.nama, k.jabatan, k.kompetensi || '—', k.reg || '—', dcell(k.exp, asOf), k.ket])
+      rows: pengList.map((k, i) => [i + 1, k.grup || '—', k.nrp || '—', k.nama, k.jabatan, k.kompetensi || '—', k.reg || '—', dcell(k.exp, asOf), k.ket]),
+      items: pengList, hidden: pengHidden
     },
     highrisk: [
       { key: 'a2b', title: 'Authority high risk operator A2B (excavator dan bulldozer)', head: hrHead, rows: hr(L.highrisk.a2b) },

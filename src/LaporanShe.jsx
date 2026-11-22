@@ -59,14 +59,16 @@ const Tbl = ({ head, rows, empty }) => (
     {!rows.length && <div className="no-results">{empty}</div>}</div>
 );
 
-export function Kinerja({ rows, month, year, canWrite, onTarget, catatan }) {
+export function Kinerja({ rows, month, year, canWrite, onTarget, onEditData, catatan }) {
   return (
     <section className="panel tr-panel">
       <div className="lic-bar">
         <h3 className="lap-title" style={{ margin: 0 }}>SHE Performance Monitoring • {BULAN[month]} {year}</h3>
-        {canWrite && <button type="button" className="btn light mini" onClick={onTarget} style={{ marginLeft: 'auto' }}>Atur target (objective)</button>}
+        {canWrite && <span style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button type="button" className="btn primary mini" onClick={onEditData}><Icon name="edit" size={13} /> Edit data {BULAN[month]}</button>
+          <button type="button" className="btn light mini" onClick={onTarget}>Atur target (objective)</button></span>}
       </div>
-      <p className="lap-hint">Aktual dan YTD dihitung dari tab Statistik insiden. SAP Achievement dan Implementasi PSMS dari isian bulanan di tab itu (YTD = rata-rata bulan yang terisi).</p>
+      <p className="lap-hint">Aktual dan YTD dihitung dari data bulanan. Klik “Edit data” untuk mengisi atau mengubah angka bulan ini (insiden, man hours, SAP, PSMS, dan comments) langsung dari sini. SAP Achievement dan Implementasi PSMS dari isian bulanan di tab itu (YTD = rata-rata bulan yang terisi).</p>
       <Tbl head={['Description', 'Objective', 'Actual', 'Year to date']} rows={rows} empty="Belum ada data." />
       {catatan && <div className="lap-note" style={{ marginTop: 12 }}><b>Comments:</b> {catatan}</div>}
     </section>
