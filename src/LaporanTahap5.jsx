@@ -255,7 +255,7 @@ async function importer({ file, parse, label, A, module, year, month, run }) {
 function usePeopleOps({ module, idKeys, A, year, month, run }) {
   const base = year * 10000 + (month + 1) * 100;
   const save = (f, row) => run(async () => {
-    const ident = Object.fromEntries(idKeys.map(k => [k, String(f[k] ?? '').trim()])); ident.Nama = ident.Nama.toUpperCase();
+    const ident = Object.fromEntries(idKeys.map(k => [k, String(f[k] ?? '').trim()])); ident.Nama = ident.Nama.toUpperCase(); if ('BMIAwal' in ident) ident.BMIAwal = ident.BMIAwal === '' ? '' : Number(String(ident.BMIAwal).replace(',', '.'));
     const meas = Object.fromEntries(Object.entries(f).filter(([k]) => !idKeys.includes(k)).map(([k, v]) => [k, /( TB| BB)$/.test(k) && v !== '' ? Number(String(v).replace(',', '.')) : v]));
     const persist = () => (A.carried ? saveMany(module, A.roster.map(r => ({ row_index: r.row_index, data: { Roster: 1, ...Object.fromEntries(idKeys.map(k => [k, r[k] ?? ''])) } }))) : null);
     await persist();
@@ -302,13 +302,13 @@ const kkFields = [
   { key: 'P2 Catatan', label: 'P2: catatan pengobatan', type: 'textarea', wide: true }, { key: 'P2 Obat', label: 'P2: konsumsi obat' }
 ];
 const bmiFields = [
-  { key: 'Nama', label: 'Nama karyawan', required: true }, { key: 'NRP', label: 'NRP' }, { key: 'Jabatan', label: 'Jabatan' }, { key: 'Perusahaan', label: 'Perusahaan' },
+  { key: 'Nama', label: 'Nama karyawan', required: true }, { key: 'NRP', label: 'NRP' }, { key: 'Jabatan', label: 'Jabatan' }, { key: 'Perusahaan', label: 'Perusahaan' }, { key: 'BMIAwal', label: 'BMI awal', type: 'number' },
   { key: 'W12 Tanggal', label: 'W1&2: tanggal kontrol', type: 'date' }, { key: 'W12 Tempat', label: 'W1&2: tempat' }, { key: 'W12 TB', label: 'W1&2: TB (m)', type: 'number' }, { key: 'W12 BB', label: 'W1&2: BB (kg)', type: 'number' },
   { key: 'W34 Tanggal', label: 'W3&4: tanggal kontrol', type: 'date' }, { key: 'W34 Tempat', label: 'W3&4: tempat' }, { key: 'W34 TB', label: 'W3&4: TB (m)', type: 'number' }, { key: 'W34 BB', label: 'W3&4: BB (kg)', type: 'number' }
 ];
 
-export function KkTab({ data, year, month, canWrite, onRefresh, onNotice }) {
-  const A = useMemo(() => buildKK(data, year, month), [data, year, month]); const [busy, run] = useRunner(onRefresh, onNotice);
+export function KkTab({ emps, data, year, month, canWrite, onRefresh, onNotice }) {
+  const A = useMemo(() => buildKK(data, year, month, emps), [data, year, month, emps]); const [busy, run] = useRunner(onRefresh, onNotice);
   const [modal, setModal] = useState(null);
   const ops = usePeopleOps({ module: M5.kk, idKeys: KK_ID, A, year, month, run });
   const onFile = f => importer({ file: f, parse: parseKk, label: 'KK', A, module: M5.kk, year, month, run }).catch(e => onNotice?.(`Impor gagal: ${e.message}`));
@@ -318,8 +318,8 @@ export function KkTab({ data, year, month, canWrite, onRefresh, onNotice }) {
       <div className="lap-note" style={{ margin: '10px 0' }}>Data kesehatan karyawan: hanya untuk yang berwenang. Status otomatis: Periode 1 bila tanggal dan tempat P1 terisi, Periode 2 bila hanya P2 terisi, Rutin bila keduanya terisi. Orang yang ditambahkan muncul setiap bulan sampai dihapus. {busy}</div>
       <PromoteBar A={A} canWrite={canWrite} onPromote={ops.promote} />
       {A.carried && A.from && <div className="lap-note" style={{ margin: '10px 0' }}>Nama diteruskan dari {BULAN[A.from.m]} {A.from.y}. Isi hasil kontrol lewat tombol Ubah; daftar tetap tersimpan begitu Anda mengubah atau menambah orang.</div>}
-      <Tbl head={['No', 'NRP', 'NRPSAP', 'Nama karyawan', 'Usia', 'Jabatan', 'P1: hasil kunjungan', 'P1: catatan pengobatan', 'P1: konsumsi obat', 'P2: tanggal', 'P2: tempat', 'P2: hasil kunjungan', 'P2: catatan pengobatan', 'P2: konsumsi obat', 'Status', ...(canWrite ? [''] : [])]}
-        rows={A.rows.map(x => [x.No, x.NRP, x.NRPSAP, x.Nama, x.Usia, x.Jabatan, x['P1 Hasil'] || '—', x['P1 Catatan'] || '—', x['P1 Obat'] || '—', dt(x['P2 Tanggal']), x['P2 Tempat'] || '—', x['P2 Hasil'] || '—', x['P2 Catatan'] || '—', x['P2 Obat'] || '—', <span key="s" className="badge" data-tone={stTone(x.Status)}>{x.Status || '—'}</span>, ...(canWrite ? [<RowBtns key="a" onEdit={() => setModal({ row: x })} onDel={() => ops.del(x)} />] : [])])}
+      <Tbl head={['No', 'AMODI NRP', 'Nama karyawan', 'Jabatan', 'Usia', 'P1: tanggal', 'P1: tempat', 'P1: hasil kunjungan', 'P1: catatan pengobatan', 'P1: konsumsi obat', 'P2: tanggal', 'P2: tempat', 'P2: hasil kunjungan', 'P2: catatan pengobatan', 'P2: konsumsi obat', 'Status', ...(canWrite ? [''] : [])]}
+        rows={A.rows.map(x => [x.No, x.Amodi || '—', x.Nama, x.Jabatan, x.Usia, dt(x['P1 Tanggal']), x['P1 Tempat'] || '—', x['P1 Hasil'] || '—', x['P1 Catatan'] || '—', x['P1 Obat'] || '—', dt(x['P2 Tanggal']), x['P2 Tempat'] || '—', x['P2 Hasil'] || '—', x['P2 Catatan'] || '—', x['P2 Obat'] || '—', <span key="s" className="badge" data-tone={stTone(x.Status)}>{x.Status || '—'}</span>, ...(canWrite ? [<RowBtns key="a" onEdit={() => setModal({ row: x })} onDel={() => ops.del(x)} />] : [])])}
         empty={canWrite ? 'Belum ada orang. Klik "+ Tambah orang" atau "Impor dari Excel".' : 'Belum ada data KK.'} />
       {A.n > 0 && <Ringkas A={A} label="Jumlah karyawan kontrol KK" />}
       {modal && <FormModal eyebrow={`KK ${BULAN[month].toUpperCase()} ${year}`} title={modal.row ? `Ubah ${modal.row.Nama}` : 'Tambah orang'} fields={kkFields} init={initOf(kkFields, modal.row, ['P1 Tanggal', 'P2 Tanggal'])}
@@ -327,8 +327,8 @@ export function KkTab({ data, year, month, canWrite, onRefresh, onNotice }) {
     </section>
   );
 }
-export function BmiTab({ data, year, month, canWrite, onRefresh, onNotice }) {
-  const A = useMemo(() => buildBMI(data, year, month), [data, year, month]); const [busy, run] = useRunner(onRefresh, onNotice);
+export function BmiTab({ emps, data, year, month, canWrite, onRefresh, onNotice }) {
+  const A = useMemo(() => buildBMI(data, year, month, emps), [data, year, month, emps]); const [busy, run] = useRunner(onRefresh, onNotice);
   const [modal, setModal] = useState(null);
   const ops = usePeopleOps({ module: M5.bmi, idKeys: BMI_ID, A, year, month, run });
   const onFile = f => importer({ file: f, parse: parseBmi, label: 'BMI', A, module: M5.bmi, year, month, run }).catch(e => onNotice?.(`Impor gagal: ${e.message}`));
@@ -339,8 +339,8 @@ export function BmiTab({ data, year, month, canWrite, onRefresh, onNotice }) {
       <div className="lap-note" style={{ margin: '10px 0' }}>Data kesehatan karyawan: hanya untuk yang berwenang. BMI dihitung dari BB dibagi TB kuadrat (merah ≥ 30, kuning 25 sampai 29,9). Status otomatis: Periode 1 bila tanggal dan tempat W1&2 terisi, Periode 2 bila hanya W3&4 terisi, Rutin bila keduanya terisi. Orang yang ditambahkan muncul setiap bulan sampai dihapus. {busy}</div>
       <PromoteBar A={A} canWrite={canWrite} onPromote={ops.promote} />
       {A.carried && A.from && <div className="lap-note" style={{ margin: '10px 0' }}>Nama diteruskan dari {BULAN[A.from.m]} {A.from.y}. Isi hasil kontrol lewat tombol Ubah; daftar tetap tersimpan begitu Anda mengubah atau menambah orang.</div>}
-      <Tbl head={['No', 'NRP', 'Nama karyawan', 'Jabatan', 'W1&2: tempat', 'TB (m)', 'BB', 'BMI', 'W3&4: tgl kontrol', 'Tempat', 'TB (m)', 'BB', 'BMI', 'Status', ...(canWrite ? [''] : [])]}
-        rows={A.rows.map(x => [x.No, x.NRP, x.Nama, x.Jabatan, x['W12 Tempat'] || '—', x['W12 TB'] || '—', x['W12 BB'] || '—', b(x.bmi1), dt(x['W34 Tanggal']), x['W34 Tempat'] || '—', x['W34 TB'] || '—', x['W34 BB'] || '—', b(x.bmi2), <span key="s" className="badge" data-tone={stTone(x.Status)}>{x.Status || '—'}</span>, ...(canWrite ? [<RowBtns key="a" onEdit={() => setModal({ row: x })} onDel={() => ops.del(x)} />] : [])])}
+      <Tbl head={['No', 'AMODI NRP', 'Nama karyawan', 'Jabatan', 'BMI Awal', 'W1&2: tgl kontrol', 'W1&2: tempat', 'TB (m)', 'BB', 'BMI', 'W3&4: tgl kontrol', 'Tempat', 'TB (m)', 'BB', 'BMI', 'Status', ...(canWrite ? [''] : [])]}
+        rows={A.rows.map(x => [x.No, x.Amodi || '—', x.Nama, x.Jabatan, b(x.bmi0), dt(x['W12 Tanggal']), x['W12 Tempat'] || '—', x['W12 TB'] || '—', x['W12 BB'] || '—', b(x.bmi1), dt(x['W34 Tanggal']), x['W34 Tempat'] || '—', x['W34 TB'] || '—', x['W34 BB'] || '—', b(x.bmi2), <span key="s" className="badge" data-tone={stTone(x.Status)}>{x.Status || '—'}</span>, ...(canWrite ? [<RowBtns key="a" onEdit={() => setModal({ row: x })} onDel={() => ops.del(x)} />] : [])])}
         empty={canWrite ? 'Belum ada orang. Klik "+ Tambah orang" atau "Impor dari Excel".' : 'Belum ada data BMI.'} />
       {A.n > 0 && <Ringkas A={A} label="Jumlah karyawan kontrol BMI" />}
       {modal && <FormModal eyebrow={`BMI ${BULAN[month].toUpperCase()} ${year}`} title={modal.row ? `Ubah ${modal.row.Nama}` : 'Tambah orang'} fields={bmiFields} init={initOf(bmiFields, modal.row, ['W12 Tanggal', 'W34 Tanggal'])}

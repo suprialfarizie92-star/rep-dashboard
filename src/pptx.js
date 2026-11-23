@@ -250,14 +250,14 @@ export function buildDeck(PptxGenJS, ctx) {
     tableSlides(pptx, 'SHE SAP', `Safety Accountability Program (SAP) • ${bulanLabel}`, head, rows);
   }
   if (kk && kk.n) {
-    tableSlides(pptx, 'SHE KESEHATAN', `Monitoring Kontrol Kritis Kronis • ${bulanLabel}`, ['NO', 'NRP', 'NRPSAP', 'NAMA KARYAWAN', 'USIA', 'JABATAN', 'P1 HASIL KUNJUNGAN', 'P1 CATATAN PENGOBATAN', 'P1 KONSUMSI OBAT', 'P2 TANGGAL', 'P2 TEMPAT', 'P2 HASIL KUNJUNGAN', 'P2 CATATAN PENGOBATAN', 'P2 KONSUMSI OBAT', 'STATUS'],
-      kk.rows.map(x => [x.No, x.NRP, x.NRPSAP, x.Nama, x.Usia, x.Jabatan, x['P1 Hasil'] || '', x['P1 Catatan'] || '', x['P1 Obat'] || '', dtx(x['P2 Tanggal']), x['P2 Tempat'] || '', x['P2 Hasil'] || '', x['P2 Catatan'] || '', x['P2 Obat'] || '', x.Status || '']));
+    tableSlides(pptx, 'SHE KESEHATAN', `Monitoring Kontrol Kritis Kronis • ${bulanLabel}`, ['NO', 'AMODI NRP', 'NAMA KARYAWAN', 'JABATAN', 'USIA', 'P1 TANGGAL', 'P1 TEMPAT', 'P1 HASIL KUNJUNGAN', 'P1 CATATAN PENGOBATAN', 'P1 KONSUMSI OBAT', 'P2 TANGGAL', 'P2 TEMPAT', 'P2 HASIL KUNJUNGAN', 'P2 CATATAN PENGOBATAN', 'P2 KONSUMSI OBAT', 'STATUS'],
+      kk.rows.map(x => [x.No, x.Amodi || '', x.Nama, x.Jabatan, x.Usia, dtx(x['P1 Tanggal']), x['P1 Tempat'] || '', x['P1 Hasil'] || '', x['P1 Catatan'] || '', x['P1 Obat'] || '', dtx(x['P2 Tanggal']), x['P2 Tempat'] || '', x['P2 Hasil'] || '', x['P2 Catatan'] || '', x['P2 Obat'] || '', x.Status || '']));
     tableSlides(pptx, 'SHE KESEHATAN', 'Monitoring Kontrol Kritis Kronis • Ringkasan', RINGKAS_HEAD, ringkasKe('KK', kk), { fs: 12, rowH: 0.5 });
   }
   if (bmi && bmi.n) {
     const b = v => (v === null ? '' : { t: v.toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 }), tone: bmiTone(v) });
-    tableSlides(pptx, 'SHE KESEHATAN', `Monitoring Kontrol BMI • ${bulanLabel}`, ['NO', 'NRP', 'NAMA KARYAWAN', 'JABATAN', 'W1&2 TEMPAT', 'TB (M)', 'BB', 'BMI', 'W3&4 TGL KONTROL', 'TEMPAT', 'TB (M)', 'BB', 'BMI', 'STATUS'],
-      bmi.rows.map(x => [x.No, x.NRP, x.Nama, x.Jabatan, x['W12 Tempat'] || '', x['W12 TB'] || '', x['W12 BB'] || '', b(x.bmi1), dtx(x['W34 Tanggal']), x['W34 Tempat'] || '', x['W34 TB'] || '', x['W34 BB'] || '', b(x.bmi2), x.Status || '']));
+    tableSlides(pptx, 'SHE KESEHATAN', `Monitoring Kontrol BMI • ${bulanLabel}`, ['NO', 'AMODI NRP', 'NAMA KARYAWAN', 'JABATAN', 'BMI AWAL', 'W1&2 TGL KONTROL', 'W1&2 TEMPAT', 'TB (M)', 'BB', 'BMI', 'W3&4 TGL KONTROL', 'TEMPAT', 'TB (M)', 'BB', 'BMI', 'STATUS'],
+      bmi.rows.map(x => [x.No, x.Amodi || '', x.Nama, x.Jabatan, b(x.bmi0), dtx(x['W12 Tanggal']), x['W12 Tempat'] || '', x['W12 TB'] || '', x['W12 BB'] || '', b(x.bmi1), dtx(x['W34 Tanggal']), x['W34 Tempat'] || '', x['W34 TB'] || '', x['W34 BB'] || '', b(x.bmi2), x.Status || '']));
     tableSlides(pptx, 'SHE KESEHATAN', 'Monitoring Kontrol BMI • Ringkasan', RINGKAS_HEAD, ringkasKe('BMI', bmi), { fs: 12, rowH: 0.5 });
   }
   inspeksiSlide(pptx, insp || [], year, month);

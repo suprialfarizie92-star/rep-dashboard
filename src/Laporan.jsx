@@ -208,7 +208,7 @@ export default function Laporan({ data, loading, canPrivate, canWrite, canHealth
       const photos2 = { ...photos, ...(await fotoDataUrls(extra)) };
       const health = canHealth && withHealth;
       await exportPptx({ T, stat, kin, ins, pen, sap, insp, keg, photos: photos2, year: ym.y, month: ym.m, pica: buildPica(data), kkp, struktur,
-        penyakit: { pak: buildPenyakit(data, ym.y, 'PAK', ym.m), kaptk: buildPenyakit(data, ym.y, 'KAPTK', ym.m) }, kk: health ? buildKK(data, ym.y, ym.m) : null, bmi: health ? buildBMI(data, ym.y, ym.m) : null });
+        penyakit: { pak: buildPenyakit(data, ym.y, 'PAK', ym.m), kaptk: buildPenyakit(data, ym.y, 'KAPTK', ym.m) }, kk: health ? buildKK(data, ym.y, ym.m, L.aktif) : null, bmi: health ? buildBMI(data, ym.y, ym.m, L.aktif) : null });
     } catch (e) {
       onNotice?.(/pptxgenjs|dynamically imported|Failed to fetch/i.test(String(e.message)) ? 'Unduh PowerPoint butuh paket pptxgenjs. Jalankan: npm install pptxgenjs' : `Gagal membuat PowerPoint: ${e.message}`);
     } finally { setPptBusy(false); }
@@ -371,8 +371,8 @@ export default function Laporan({ data, loading, canPrivate, canWrite, canHealth
           {tab === 'penyakit' && <PenyakitTab data={data} year={ym.y} month={ym.m} canWrite={canWrite} onRefresh={onRefresh} onNotice={onNotice} />}
           {tab === 'kkp' && <KkpTab data={data} year={ym.y} month={ym.m} canWrite={canWrite} onRefresh={onRefresh} onNotice={onNotice} />}
           {tab === 'struktur' && <StrukturTab data={data} year={ym.y} month={ym.m} canWrite={canWrite} onRefresh={onRefresh} onNotice={onNotice} />}
-          {tab === 'kk' && canHealth && <KkTab data={data} year={ym.y} month={ym.m} canWrite={canHealthWrite} onRefresh={onRefresh} onNotice={onNotice} />}
-          {tab === 'bmi' && canHealth && <BmiTab data={data} year={ym.y} month={ym.m} canWrite={canHealthWrite} onRefresh={onRefresh} onNotice={onNotice} />}
+          {tab === 'kk' && canHealth && <KkTab emps={L.aktif} data={data} year={ym.y} month={ym.m} canWrite={canHealthWrite} onRefresh={onRefresh} onNotice={onNotice} />}
+          {tab === 'bmi' && canHealth && <BmiTab emps={L.aktif} data={data} year={ym.y} month={ym.m} canWrite={canHealthWrite} onRefresh={onRefresh} onNotice={onNotice} />}
           {tab === 'kegiatan' && <KegiatanTab data={data} year={ym.y} month={ym.m} canWrite={canWrite} onRefresh={onRefresh} onNotice={onNotice} />}
           {tab === 'inspeksi' && <InspeksiTab list={insp} year={ym.y} month={ym.m} canWrite={canWrite} onToggle={toggleDay} onAdd={() => setModal({ type: 'insp' })} onDelete={delInsp} onCopyPrev={copyPrev} />}
         </>
