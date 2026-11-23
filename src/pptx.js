@@ -97,6 +97,60 @@ function statSlide(pptx, stat, year) {
   s.addTable([r1, r2, ...body, ...(tot ? [tot] : [])], { x: X0, y: 1.25, w: W, colW: widths.map(x => x * sc), rowH: 0.3, border: { type: 'solid', pt: 0.5, color: C.line }, margin: [0.02, 0.03, 0.02, 0.03] });
 }
 
+/** Gambar bagan struktur organisasi dari daftar posisi. Atasan dengan 4 bawahan atau lebih (tanpa bawahan lagi) disusun ke bawah supaya muat. */
+export function orgSlide(pptx, nodes) {
+  const s = frame(pptx, 'MANPOWER', 'Struktur Organisasi REP Site PAMA IMM');
+  const ids = new Set(nodes.map(n => n.id)); const kids = new Map();
+  nodes.forEach(n => { const p = ids.has(n.parent) ? n.parent : ''; if (!kids.has(p)) kids.set(p, []); kids.get(p).push(n); });
+  const ch = n => kids.get(n.id) || [];
+  const stacked = n => ch(n).length >= 4 && ch(n).every(c => !ch(c).length);
+  const wd = n => (!ch(n).length || stacked(n) ? 1 : Math.max(1, ch(n).reduce((a, x) => a + wd(x), 0)));
+  const out = []; let maxRow = 0;
+  const place = (n, x0, row, depth) => {
+    maxRow = Math.max(maxRow, row);
+    if (depth > 10) return x0 + 0.5;
+    const c = ch(n);
+    if (!c.length) { out.push({ n, l: x0, w: 1, row, depth }); return x0 + 0.5; }
+    if (stacked(n)) {
+      out.push({ n, l: x0, w: 1, row, depth, stack: c.length });
+      c.forEach((k, i) => { out.push({ n: k, l: x0 + 0.14, w: 0.86, row: row + 1 + i, depth: depth + 1, st: true }); maxRow = Math.max(maxRow, row + 1 + i); });
+      return x0 + 0.5;
+    }
+    let cur = x0; const cs = [];
+    c.forEach(k => { cs.push(place(k, cur, row + 1, depth + 1)); cur += wd(k); });
+    out.push({ n, l: x0, w: 1, row, depth, cs, cx: (cs[0] + cs[cs.length - 1]) / 2 });
+    return (cs[0] + cs[cs.length - 1]) / 2;
+  };
+  const roots = kids.get('') || []; let x = 0;
+  roots.forEach(r => { const cx = place(r, x, 0, 0); const o = out.find(q => q.n === r); if (o && o.cx === undefined) o.cx = cx; x += wd(r) + 0.3; });
+  const total = Math.max(1, x - 0.3);
+  const u = Math.min(W / total, 2.4); const off = X0 + (W - total * u) / 2;
+  const rows = maxRow + 1; const rowH = Math.min(1.05, 5.5 / rows); const bh = rowH * 0.7; const gap = rowH - bh; const y0 = 1.35;
+  const X = v => off + v * u; const Y = r => y0 + r * rowH;
+  const ln = (a, b, c, d) => s.addShape('line', { x: Math.min(a, c), y: Math.min(b, d), w: Math.abs(c - a), h: Math.abs(d - b), line: { color: '7F8FA9', width: 1 } });
+  const pos = new Map(out.map(o => [o.n, o]));
+  out.forEach(o => {
+    const bw = o.w * u * 0.92; const bx = X(o.l) + (o.w * u - bw) / 2; const by = Y(o.row);
+    const fs = Math.max(6, Math.min(11, Math.min(bh * 22, bw * 6.5)));
+    const col = o.depth === 0 ? { fill: C.navy, text: 'FFFFFF' } : o.depth === 1 ? { fill: C.blue, text: 'FFFFFF' } : { fill: 'F3F6FB', text: '000000' };
+    s.addShape('rect', { x: bx, y: by, w: bw, h: bh, fill: { color: col.fill }, line: { color: C.blue, width: 0.75 } });
+    s.addText([{ text: o.n.jabatan || '', options: { bold: true, breakLine: Boolean(o.n.nama) } }, ...(o.n.nama ? [{ text: o.n.nama, options: {} }] : [])], { x: bx, y: by, w: bw, h: bh, align: 'center', valign: 'middle', fontSize: fs, color: col.text, fontFace: 'Arial', margin: 0.02, fit: 'shrink' });
+    const cxp = bx + bw / 2;
+    if (o.cs) {
+      const my = by + bh + gap / 2;
+      ln(cxp, by + bh, cxp, my);
+      if (o.cs.length > 1) ln(X(o.cs[0]), my, X(o.cs[o.cs.length - 1]), my);
+      o.cs.forEach(c => ln(X(c), my, X(c), Y(o.row + 1)));
+    }
+    if (o.stack) {
+      const lx = X(o.l) + 0.07 * u; const last = Y(o.row + o.stack) + bh / 2;
+      ln(lx, by + bh, lx, last);
+      for (let i = 1; i <= o.stack; i += 1) ln(lx, Y(o.row + i) + bh / 2, X(o.l + 0.14) + (0.86 * u - 0.86 * u * 0.92) / 2, Y(o.row + i) + bh / 2);
+    }
+  });
+  return pos.size;
+}
+
 function inspeksiSlide(pptx, insp, year, month) {
   const n = daysIn(year, month); const fs = 5.5;
   const s = frame(pptx, 'SHE INSPEKSI', `Jadwal Inspeksi • ${BULAN[month]} ${year}`);
@@ -204,7 +258,7 @@ const RINGKAS_HEAD = ['NO', 'JUMLAH KARYAWAN', 'PERIODE I PLAN', 'ACTUAL', 'ACHI
 
 /** Susun seluruh deck. `PptxGenJS` diberikan dari luar supaya bisa diuji tanpa browser. */
 export function buildDeck(PptxGenJS, ctx) {
-  const { T, stat, kin, ins, pen, sap, insp, keg, photos = {}, year, month, pica = [], kkp, struktur, penyakit, kk, bmi } = ctx;
+  const { T, stat, kin, ins, pen, sap, insp, keg, photos = {}, year, month, pica = [], kkp, struktur, org, penyakit, kk, bmi } = ctx;
   const bulanLabel = `${BULAN[month]} ${year}`;
   const pptx = new PptxGenJS();
   pptx.layout = 'LAYOUT_WIDE'; pptx.title = `SHE Monthly Report ${bulanLabel}`; pptx.company = 'PT. REP';
@@ -215,7 +269,8 @@ export function buildDeck(PptxGenJS, ctx) {
   cover.addText('SHE MONTHLY REPORT', { x: 0.6, y: 2.75, w: 12, h: 0.9, fontSize: 38, bold: true, color: 'FFFFFF', fontFace: 'Arial' });
   cover.addText(`${bulanLabel.toUpperCase()}  •  PT. RYAN EKA PRATAMA`, { x: 0.6, y: 3.6, w: 12, h: 0.6, fontSize: 18, color: 'DDE6F5', fontFace: 'Arial' });
 
-  imageSlide(pptx, 'MANPOWER', 'Struktur Organisasi REP Site PAMA IMM', struktur?.path ? photos[struktur.path] : null);
+  if (org?.nodes?.length) orgSlide(pptx, org.nodes);
+  else imageSlide(pptx, 'MANPOWER', 'Struktur Organisasi REP Site PAMA IMM', struktur?.path ? photos[struktur.path] : null);
   tableSlides(pptx, 'MANPOWER', 'Daftar Karyawan Aktif', T.aktif.head, T.aktif.rows);
   masukKeluarSlides(pptx, T, bulanLabel);
   tableSlides(pptx, 'MANPOWER', 'Daftar Manpower', T.manpower.head, T.manpower.rows);
@@ -250,14 +305,14 @@ export function buildDeck(PptxGenJS, ctx) {
     tableSlides(pptx, 'SHE SAP', `Safety Accountability Program (SAP) • ${bulanLabel}`, head, rows);
   }
   if (kk && kk.n) {
-    tableSlides(pptx, 'SHE KESEHATAN', `Monitoring Kontrol Kritis Kronis • ${bulanLabel}`, ['NO', 'AMODI NRP', 'NAMA KARYAWAN', 'JABATAN', 'USIA', 'P1 TANGGAL', 'P1 TEMPAT', 'P1 HASIL KUNJUNGAN', 'P1 CATATAN PENGOBATAN', 'P1 KONSUMSI OBAT', 'P2 TANGGAL', 'P2 TEMPAT', 'P2 HASIL KUNJUNGAN', 'P2 CATATAN PENGOBATAN', 'P2 KONSUMSI OBAT', 'STATUS'],
-      kk.rows.map(x => [x.No, x.Amodi || '', x.Nama, x.Jabatan, x.Usia, dtx(x['P1 Tanggal']), x['P1 Tempat'] || '', x['P1 Hasil'] || '', x['P1 Catatan'] || '', x['P1 Obat'] || '', dtx(x['P2 Tanggal']), x['P2 Tempat'] || '', x['P2 Hasil'] || '', x['P2 Catatan'] || '', x['P2 Obat'] || '', x.Status || '']));
+    tableSlides(pptx, 'SHE KESEHATAN', `Monitoring Kontrol Kritis Kronis • ${bulanLabel}`, ['NO', 'AMODI', 'NRP', 'NAMA KARYAWAN', 'JABATAN', 'USIA', 'P1 TANGGAL', 'P1 TEMPAT', 'P1 HASIL KUNJUNGAN', 'P1 CATATAN PENGOBATAN', 'P1 KONSUMSI OBAT', 'P2 TANGGAL', 'P2 TEMPAT', 'P2 HASIL KUNJUNGAN', 'P2 CATATAN PENGOBATAN', 'P2 KONSUMSI OBAT', 'STATUS'],
+      kk.rows.map(x => [x.No, x.Amodi || '', x.Nrp || '', x.Nama, x.Jabatan, x.Usia, dtx(x['P1 Tanggal']), x['P1 Tempat'] || '', x['P1 Hasil'] || '', x['P1 Catatan'] || '', x['P1 Obat'] || '', dtx(x['P2 Tanggal']), x['P2 Tempat'] || '', x['P2 Hasil'] || '', x['P2 Catatan'] || '', x['P2 Obat'] || '', x.Status || '']));
     tableSlides(pptx, 'SHE KESEHATAN', 'Monitoring Kontrol Kritis Kronis • Ringkasan', RINGKAS_HEAD, ringkasKe('KK', kk), { fs: 12, rowH: 0.5 });
   }
   if (bmi && bmi.n) {
     const b = v => (v === null ? '' : { t: v.toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 }), tone: bmiTone(v) });
-    tableSlides(pptx, 'SHE KESEHATAN', `Monitoring Kontrol BMI • ${bulanLabel}`, ['NO', 'AMODI NRP', 'NAMA KARYAWAN', 'JABATAN', 'BMI AWAL', 'W1&2 TGL KONTROL', 'W1&2 TEMPAT', 'TB (M)', 'BB', 'BMI', 'W3&4 TGL KONTROL', 'TEMPAT', 'TB (M)', 'BB', 'BMI', 'STATUS'],
-      bmi.rows.map(x => [x.No, x.Amodi || '', x.Nama, x.Jabatan, b(x.bmi0), dtx(x['W12 Tanggal']), x['W12 Tempat'] || '', x['W12 TB'] || '', x['W12 BB'] || '', b(x.bmi1), dtx(x['W34 Tanggal']), x['W34 Tempat'] || '', x['W34 TB'] || '', x['W34 BB'] || '', b(x.bmi2), x.Status || '']));
+    tableSlides(pptx, 'SHE KESEHATAN', `Monitoring Kontrol BMI • ${bulanLabel}`, ['NO', 'AMODI', 'NRP', 'NAMA KARYAWAN', 'JABATAN', 'BMI AWAL', 'W1&2 TGL KONTROL', 'W1&2 TEMPAT', 'TB (M)', 'BB', 'BMI', 'W3&4 TGL KONTROL', 'TEMPAT', 'TB (M)', 'BB', 'BMI', 'STATUS'],
+      bmi.rows.map(x => [x.No, x.Amodi || '', x.Nrp || '', x.Nama, x.Jabatan, b(x.bmi0), dtx(x['W12 Tanggal']), x['W12 Tempat'] || '', x['W12 TB'] || '', x['W12 BB'] || '', b(x.bmi1), dtx(x['W34 Tanggal']), x['W34 Tempat'] || '', x['W34 TB'] || '', x['W34 BB'] || '', b(x.bmi2), x.Status || '']));
     tableSlides(pptx, 'SHE KESEHATAN', 'Monitoring Kontrol BMI • Ringkasan', RINGKAS_HEAD, ringkasKe('BMI', bmi), { fs: 12, rowH: 0.5 });
   }
   inspeksiSlide(pptx, insp || [], year, month);

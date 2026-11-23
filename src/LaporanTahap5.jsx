@@ -6,7 +6,7 @@ import { BUCKET } from './she4.js';
 import { BULAN, fd } from './laporan.js';
 import { FormModal, deleteRec, saveMany, saveRec } from './LaporanShe.jsx';
 import { uploadFotos, useFotoUrls } from './LaporanTahap4.jsx';
-import { M5, STATUS_PICA, bmiTone, buildBMI, buildKK, buildKkp, buildPenyakit, buildPica, buildStruktur, join, list, parseBmi, parseKk, parseMom, pctN, personKey, KK_ID, BMI_ID } from './she5.js';
+import { M5, STATUS_PICA, bmiTone, buildBMI, buildKK, buildKkp, buildOrg, orgIdx, buildPenyakit, buildPica, buildStruktur, join, list, parseBmi, parseKk, parseMom, pctN, personKey, KK_ID, BMI_ID } from './she5.js';
 import { toIso } from './smkp.js';
 
 const SB = { Open: 'amber', Continue: 'blue', Closed: 'green', Belum: 'gray' };
@@ -196,24 +196,111 @@ export function KkpTab({ data, year, month, canWrite, onRefresh, onNotice }) {
   );
 }
 
-// ---------- Struktur organisasi ----------
+// ---------- Struktur organisasi (bagan yang bisa diedit + gambar unggahan sebagai alternatif) ----------
+const ORG_CSS = `.org{overflow-x:auto;padding:8px 0 16px}.org ul{display:flex;justify-content:center;list-style:none;margin:0;padding:20px 0 0;position:relative}
+.org>ul{padding-top:0}.org li{position:relative;padding:20px 6px 0;display:flex;flex-direction:column;align-items:center}
+.org>ul>li{padding-top:0}
+.org li::before,.org li::after{content:'';position:absolute;top:0;right:50%;width:50%;height:20px;border-top:1px solid #94a3b8}
+.org li::after{right:auto;left:50%;border-left:1px solid #94a3b8}
+.org>ul>li::before,.org>ul>li::after,.org li:only-child::before,.org li:only-child::after{display:none}
+.org li:only-child{padding-top:20px}.org>ul>li:only-child{padding-top:0}
+.org li:first-child::before,.org li:last-child::after{border:0 none}
+.org li:last-child::before{border-right:1px solid #94a3b8;border-radius:0 6px 0 0}.org li:first-child::after{border-radius:6px 0 0 0}
+.org ul ul::before{content:'';position:absolute;top:0;left:50%;height:20px;border-left:1px solid #94a3b8}
+.org-box{min-width:120px;max-width:190px;padding:7px 10px;border-radius:8px;border:1px solid #2F5597;background:#F3F6FB;color:#111827;font-size:12px;line-height:1.3;display:flex;flex-direction:column;gap:2px}
+.org-box[data-l="0"]{background:#1F3864;color:#fff}.org-box[data-l="1"]{background:#2F5597;color:#fff}.org-box span{font-size:11px;opacity:.9}`;
+function OrgLi({ n, nodes, level }) {
+  const kids = nodes.filter(x => x.parent === n.id);
+  return (
+    <li>
+      <div className="org-box" data-l={Math.min(level, 2)}><b>{n.jabatan}</b>{n.nama && <span>{n.nama}</span>}</div>
+      {kids.length > 0 && level < 12 && <ul>{kids.map(k => <OrgLi key={k.id} n={k} nodes={nodes} level={level + 1} />)}</ul>}
+    </li>
+  );
+}
+const orgLabel = n => `${n.jabatan || '(tanpa jabatan)'}${n.nama ? ` • ${n.nama}` : ''}`;
+const newId = () => `n${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+const ORG_SAMPLE = () => { const r = newId(); const mk = (parent, jabatan) => ({ id: newId(), parent, jabatan, nama: '' }); return [{ id: r, parent: '', jabatan: 'Site Manager', nama: '' }, ...['Production', 'Engineering', 'SHE', 'HR & GA'].map(j => mk(r, j))]; };
+
 export function StrukturTab({ data, year, month, canWrite, onRefresh, onNotice }) {
   const S = useMemo(() => buildStruktur(data, year, month), [data, year, month]);
+  const org = useMemo(() => buildOrg(data, year, month), [data, year, month]);
+  const nodes = org.nodes;
+  const ids = new Set(nodes.map(n => n.id));
+  const roots = nodes.filter(n => !ids.has(n.parent) || !n.parent);
+  const nodesN = nodes.map(n => (ids.has(n.parent) ? n : { ...n, parent: '' }));
   const urls = useFotoUrls(useMemo(() => (S?.path ? [S.path] : []), [S]));
   const [busy, run] = useRunner(onRefresh, onNotice); const ref = useRef(null);
+  const [modal, setModal] = useState(null);
   const upload = files => run(async () => {
     const [p] = await uploadFotos(files.slice(0, 1), `struktur/${year}/${String(month + 1).padStart(2, '0')}`);
     await saveRec(M5.lamp, year * 10000 + (month + 1) * 100 + 1, { Tahun: year, Bulan: month + 1, Jenis: 'struktur', Foto: p });
-  }, 'Struktur organisasi diperbarui.', 'Mengunggah...');
+  }, 'Gambar struktur organisasi diperbarui.', 'Mengunggah...');
+  const saveNodes = (next, ok) => run(() => saveRec(M5.lamp, orgIdx(year, month), { Tahun: year, Bulan: month + 1, Jenis: 'orgchart', Nodes: next }), ok);
+  const kidsOf = id => nodesN.filter(x => x.parent === id);
+  const descOf = id => kidsOf(id).flatMap(k => [k.id, ...descOf(k.id)]);
+  const flat = []; const walk = (list, depth) => list.forEach(n => { flat.push({ n, depth }); walk(kidsOf(n.id), depth + 1); }); walk(roots.map(r => nodesN.find(x => x.id === r.id)), 0);
+  const sibs = n => nodesN.filter(x => x.parent === n.parent);
+  const move = (n, dir) => {
+    const sb = sibs(n); const i = sb.findIndex(x => x.id === n.id); const j = i + dir; if (j < 0 || j >= sb.length) return;
+    const arr = [...nodesN]; const a = arr.findIndex(x => x.id === n.id); const b = arr.findIndex(x => x.id === sb[j].id); [arr[a], arr[b]] = [arr[b], arr[a]];
+    saveNodes(arr, 'Urutan diperbarui.');
+  };
+  const del = n => { const d = descOf(n.id); if (!window.confirm(`Hapus ${n.jabatan}${d.length ? ` beserta ${d.length} bawahannya` : ''} dari bagan?`)) return; const rm = new Set([n.id, ...d]); saveNodes(nodesN.filter(x => !rm.has(x.id)), 'Posisi dihapus.'); };
+  const saveForm = async f => {
+    const jab = String(f.Jabatan || '').trim(); const nm = String(f.Nama || '').trim();
+    if (modal.node) {
+      let parent = modal.node.parent;
+      if (f.Atasan !== undefined) { const hit = (modal.opts || []).find(o => o.label === f.Atasan); parent = hit ? hit.id : ''; }
+      return saveNodes(nodesN.map(x => (x.id === modal.node.id ? { ...x, jabatan: jab, nama: nm, parent } : x)), 'Posisi diperbarui.');
+    }
+    return saveNodes([...nodesN, { id: newId(), parent: modal.parent || '', jabatan: jab, nama: nm }], 'Posisi ditambahkan.');
+  };
+  const openEdit = n => {
+    const banned = new Set([n.id, ...descOf(n.id)]); const seen = {};
+    const opts = nodesN.filter(x => !banned.has(x.id)).map(x => { let label = orgLabel(x); seen[label] = (seen[label] || 0) + 1; if (seen[label] > 1) label += ` #${seen[label]}`; return { id: x.id, label }; });
+    setModal({ node: n, opts });
+  };
+  const orgFields = modal?.node
+    ? [{ key: 'Jabatan', label: 'Jabatan / posisi', required: true, wide: true }, { key: 'Nama', label: 'Nama (boleh kosong)', wide: true }, { key: 'Atasan', label: 'Atasan', type: 'select', options: ['(Paling atas)', ...(modal.opts || []).map(o => o.label)] }]
+    : [{ key: 'Jabatan', label: 'Jabatan / posisi', required: true, wide: true }, { key: 'Nama', label: 'Nama (boleh kosong)', wide: true }];
+  const orgInit = modal?.node ? { Jabatan: modal.node.jabatan || '', Nama: modal.node.nama || '', Atasan: (modal.opts || []).find(o => o.id === modal.node.parent)?.label || '(Paling atas)' } : { Jabatan: '', Nama: '' };
+  const parentLabel = modal && !modal.node && modal.parent ? orgLabel(nodesN.find(x => x.id === modal.parent) || {}) : '';
   return (
     <section className="panel tr-panel">
+      <style>{ORG_CSS}</style>
       <div className="lic-bar">
         <h3 className="lap-title" style={{ margin: 0 }}>Struktur Organisasi REP Site PAMA IMM</h3>
+        {canWrite && <button type="button" className="btn primary mini" style={{ marginLeft: 'auto' }} onClick={() => setModal({ parent: '' })}>+ Tambah posisi paling atas</button>}
+      </div>
+      <p className="lap-hint">{busy || (nodes.length ? (org.own ? 'Bagan bulan ini.' : `Bagan diteruskan dari ${BULAN[org.from.m]} ${org.from.y}. Perubahan pertama akan menyimpannya untuk bulan ini.`) : 'Belum ada bagan. Tambah posisi satu per satu, atau mulai dari kerangka contoh lalu ubah sesuai kebutuhan.')} Bagan ini yang dipakai di slide PowerPoint.</p>
+      {canWrite && !nodes.length && <button type="button" className="btn light mini" disabled={Boolean(busy)} onClick={() => saveNodes(ORG_SAMPLE(), 'Kerangka contoh dibuat.')}>Isi kerangka contoh</button>}
+      {nodesN.length > 0 && <div className="org"><ul>{roots.map(r => <OrgLi key={r.id} n={nodesN.find(x => x.id === r.id)} nodes={nodesN} level={0} />)}</ul></div>}
+      {nodesN.length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <h4 className="keg-h">Daftar posisi</h4>
+          <div className="tr-scroll"><table className="ttable"><thead><tr><th>Jabatan / posisi</th><th>Nama</th>{canWrite && <th />}</tr></thead>
+            <tbody>{flat.map(({ n, depth }) => (
+              <tr key={n.id}>
+                <td style={{ paddingLeft: 10 + depth * 22 }}>{depth > 0 ? '↳ ' : ''}<strong>{n.jabatan}</strong></td><td>{n.nama || '—'}</td>
+                {canWrite && <td><span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <button type="button" className="btn light mini" title="Naikkan" onClick={() => move(n, -1)}>▲</button>
+                  <button type="button" className="btn light mini" title="Turunkan" onClick={() => move(n, 1)}>▼</button>
+                  <button type="button" className="btn light mini" onClick={() => setModal({ parent: n.id })}>+ Bawahan</button>
+                  <button type="button" className="btn light mini" onClick={() => openEdit(n)}><Icon name="edit" size={13} /> Ubah</button>
+                  <button type="button" className="btn light mini" style={{ color: 'var(--alert)' }} onClick={() => del(n)}>Hapus</button></span></td>}
+              </tr>))}</tbody></table></div>
+        </div>
+      )}
+      <h4 className="keg-h" style={{ marginTop: 18 }}>Alternatif: unggah gambar</h4>
+      <div className="lic-bar">
+        <p className="lap-hint" style={{ margin: 0 }}>{S ? `Gambar unggahan ${BULAN[Number(S.Bulan) - 1]} ${S.Tahun}. Di PowerPoint, gambar hanya dipakai bila bagan di atas kosong.` : 'Belum ada gambar. Tidak wajib bila bagan di atas sudah diisi.'}</p>
         {canWrite && <button type="button" className="btn light mini" style={{ marginLeft: 'auto' }} disabled={Boolean(busy)} onClick={() => ref.current?.click()}><Icon name="upload" size={13} /> {S ? 'Ganti gambar' : 'Unggah gambar'}</button>}
         <input ref={ref} type="file" accept="image/*" className="sm-hidden" onChange={e => { const f = [...(e.target.files || [])]; e.target.value = ''; if (f.length) upload(f); }} />
       </div>
-      <p className="lap-hint">{busy || (S ? `Gambar yang dipakai: unggahan ${BULAN[Number(S.Bulan) - 1]} ${S.Tahun}. Bulan berikutnya otomatis memakai gambar ini sampai diganti.` : 'Belum ada gambar. Unggah gambar struktur organisasi (JPG atau PNG).')}</p>
-      {S?.path && urls[S.path] && <img src={urls[S.path]} alt="Struktur organisasi" style={{ maxWidth: '100%', borderRadius: 8, border: '1px solid var(--line)' }} />}
+      {S?.path && urls[S.path] && <img src={urls[S.path]} alt="Struktur organisasi" style={{ maxWidth: '100%', borderRadius: 8, border: '1px solid var(--line)', marginTop: 8 }} />}
+      {modal && <FormModal eyebrow="STRUKTUR ORGANISASI" title={modal.node ? `Ubah ${modal.node.jabatan}` : parentLabel ? `Tambah bawahan: ${parentLabel}` : 'Tambah posisi'} fields={orgFields} init={orgInit}
+        onClose={() => setModal(null)} onSave={async f => { if (await saveForm(f)) setModal(null); }} />}
     </section>
   );
 }
@@ -318,8 +405,8 @@ export function KkTab({ emps, data, year, month, canWrite, onRefresh, onNotice }
       <div className="lap-note" style={{ margin: '10px 0' }}>Data kesehatan karyawan: hanya untuk yang berwenang. Status otomatis: Periode 1 bila tanggal dan tempat P1 terisi, Periode 2 bila hanya P2 terisi, Rutin bila keduanya terisi. Orang yang ditambahkan muncul setiap bulan sampai dihapus. {busy}</div>
       <PromoteBar A={A} canWrite={canWrite} onPromote={ops.promote} />
       {A.carried && A.from && <div className="lap-note" style={{ margin: '10px 0' }}>Nama diteruskan dari {BULAN[A.from.m]} {A.from.y}. Isi hasil kontrol lewat tombol Ubah; daftar tetap tersimpan begitu Anda mengubah atau menambah orang.</div>}
-      <Tbl head={['No', 'AMODI NRP', 'Nama karyawan', 'Jabatan', 'Usia', 'P1: tanggal', 'P1: tempat', 'P1: hasil kunjungan', 'P1: catatan pengobatan', 'P1: konsumsi obat', 'P2: tanggal', 'P2: tempat', 'P2: hasil kunjungan', 'P2: catatan pengobatan', 'P2: konsumsi obat', 'Status', ...(canWrite ? [''] : [])]}
-        rows={A.rows.map(x => [x.No, x.Amodi || '—', x.Nama, x.Jabatan, x.Usia, dt(x['P1 Tanggal']), x['P1 Tempat'] || '—', x['P1 Hasil'] || '—', x['P1 Catatan'] || '—', x['P1 Obat'] || '—', dt(x['P2 Tanggal']), x['P2 Tempat'] || '—', x['P2 Hasil'] || '—', x['P2 Catatan'] || '—', x['P2 Obat'] || '—', <span key="s" className="badge" data-tone={stTone(x.Status)}>{x.Status || '—'}</span>, ...(canWrite ? [<RowBtns key="a" onEdit={() => setModal({ row: x })} onDel={() => ops.del(x)} />] : [])])}
+      <Tbl head={['No', 'AMODI', 'NRP', 'Nama karyawan', 'Jabatan', 'Usia', 'P1: tanggal', 'P1: tempat', 'P1: hasil kunjungan', 'P1: catatan pengobatan', 'P1: konsumsi obat', 'P2: tanggal', 'P2: tempat', 'P2: hasil kunjungan', 'P2: catatan pengobatan', 'P2: konsumsi obat', 'Status', ...(canWrite ? [''] : [])]}
+        rows={A.rows.map(x => [x.No, x.Amodi || '—', x.Nrp || '—', x.Nama, x.Jabatan, x.Usia, dt(x['P1 Tanggal']), x['P1 Tempat'] || '—', x['P1 Hasil'] || '—', x['P1 Catatan'] || '—', x['P1 Obat'] || '—', dt(x['P2 Tanggal']), x['P2 Tempat'] || '—', x['P2 Hasil'] || '—', x['P2 Catatan'] || '—', x['P2 Obat'] || '—', <span key="s" className="badge" data-tone={stTone(x.Status)}>{x.Status || '—'}</span>, ...(canWrite ? [<RowBtns key="a" onEdit={() => setModal({ row: x })} onDel={() => ops.del(x)} />] : [])])}
         empty={canWrite ? 'Belum ada orang. Klik "+ Tambah orang" atau "Impor dari Excel".' : 'Belum ada data KK.'} />
       {A.n > 0 && <Ringkas A={A} label="Jumlah karyawan kontrol KK" />}
       {modal && <FormModal eyebrow={`KK ${BULAN[month].toUpperCase()} ${year}`} title={modal.row ? `Ubah ${modal.row.Nama}` : 'Tambah orang'} fields={kkFields} init={initOf(kkFields, modal.row, ['P1 Tanggal', 'P2 Tanggal'])}
@@ -339,8 +426,8 @@ export function BmiTab({ emps, data, year, month, canWrite, onRefresh, onNotice 
       <div className="lap-note" style={{ margin: '10px 0' }}>Data kesehatan karyawan: hanya untuk yang berwenang. BMI dihitung dari BB dibagi TB kuadrat (merah ≥ 30, kuning 25 sampai 29,9). Status otomatis: Periode 1 bila tanggal dan tempat W1&2 terisi, Periode 2 bila hanya W3&4 terisi, Rutin bila keduanya terisi. Orang yang ditambahkan muncul setiap bulan sampai dihapus. {busy}</div>
       <PromoteBar A={A} canWrite={canWrite} onPromote={ops.promote} />
       {A.carried && A.from && <div className="lap-note" style={{ margin: '10px 0' }}>Nama diteruskan dari {BULAN[A.from.m]} {A.from.y}. Isi hasil kontrol lewat tombol Ubah; daftar tetap tersimpan begitu Anda mengubah atau menambah orang.</div>}
-      <Tbl head={['No', 'AMODI NRP', 'Nama karyawan', 'Jabatan', 'BMI Awal', 'W1&2: tgl kontrol', 'W1&2: tempat', 'TB (m)', 'BB', 'BMI', 'W3&4: tgl kontrol', 'Tempat', 'TB (m)', 'BB', 'BMI', 'Status', ...(canWrite ? [''] : [])]}
-        rows={A.rows.map(x => [x.No, x.Amodi || '—', x.Nama, x.Jabatan, b(x.bmi0), dt(x['W12 Tanggal']), x['W12 Tempat'] || '—', x['W12 TB'] || '—', x['W12 BB'] || '—', b(x.bmi1), dt(x['W34 Tanggal']), x['W34 Tempat'] || '—', x['W34 TB'] || '—', x['W34 BB'] || '—', b(x.bmi2), <span key="s" className="badge" data-tone={stTone(x.Status)}>{x.Status || '—'}</span>, ...(canWrite ? [<RowBtns key="a" onEdit={() => setModal({ row: x })} onDel={() => ops.del(x)} />] : [])])}
+      <Tbl head={['No', 'AMODI', 'NRP', 'Nama karyawan', 'Jabatan', 'BMI Awal', 'W1&2: tgl kontrol', 'W1&2: tempat', 'TB (m)', 'BB', 'BMI', 'W3&4: tgl kontrol', 'Tempat', 'TB (m)', 'BB', 'BMI', 'Status', ...(canWrite ? [''] : [])]}
+        rows={A.rows.map(x => [x.No, x.Amodi || '—', x.Nrp || '—', x.Nama, x.Jabatan, b(x.bmi0), dt(x['W12 Tanggal']), x['W12 Tempat'] || '—', x['W12 TB'] || '—', x['W12 BB'] || '—', b(x.bmi1), dt(x['W34 Tanggal']), x['W34 Tempat'] || '—', x['W34 TB'] || '—', x['W34 BB'] || '—', b(x.bmi2), <span key="s" className="badge" data-tone={stTone(x.Status)}>{x.Status || '—'}</span>, ...(canWrite ? [<RowBtns key="a" onEdit={() => setModal({ row: x })} onDel={() => ops.del(x)} />] : [])])}
         empty={canWrite ? 'Belum ada orang. Klik "+ Tambah orang" atau "Impor dari Excel".' : 'Belum ada data BMI.'} />
       {A.n > 0 && <Ringkas A={A} label="Jumlah karyawan kontrol BMI" />}
       {modal && <FormModal eyebrow={`BMI ${BULAN[month].toUpperCase()} ${year}`} title={modal.row ? `Ubah ${modal.row.Nama}` : 'Tambah orang'} fields={bmiFields} init={initOf(bmiFields, modal.row, ['W12 Tanggal', 'W34 Tanggal'])}

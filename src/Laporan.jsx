@@ -9,7 +9,7 @@ import { InspeksiTab, SapTab, inspFields, sapFields } from './LaporanTahap3.jsx'
 import { KegiatanTab, fotoDataUrls } from './LaporanTahap4.jsx';
 import { buildKegiatan } from './she4.js';
 import { BmiTab, KkTab, KkpTab, PenyakitTab, PicaPanel, StrukturTab } from './LaporanTahap5.jsx';
-import { M5, buildBMI, buildKK, buildKkp, buildPengOv, buildPenyakit, buildPica, buildStruktur } from './she5.js';
+import { M5, buildBMI, buildKK, buildKkp, buildOrg, buildPengOv, buildPenyakit, buildPica, buildStruktur } from './she5.js';
 import { FormModal, Insiden, Kinerja, Penegakan, Statistik, deleteRec, insidenFields, saveMany, saveRec, statFields, targetFields, toIsoDate } from './LaporanShe.jsx';
 import './dashboard.css';
 import './pages.css';
@@ -207,7 +207,7 @@ export default function Laporan({ data, loading, canPrivate, canWrite, canHealth
       const extra = [...kkp.fotos.slice(0, 4), ...kkp.absen.slice(0, 1), ...(struktur?.path ? [struktur.path] : [])];
       const photos2 = { ...photos, ...(await fotoDataUrls(extra)) };
       const health = canHealth && withHealth;
-      await exportPptx({ T, stat, kin, ins, pen, sap, insp, keg, photos: photos2, year: ym.y, month: ym.m, pica: buildPica(data), kkp, struktur,
+      await exportPptx({ T, stat, kin, ins, pen, sap, insp, keg, photos: photos2, year: ym.y, month: ym.m, pica: buildPica(data), kkp, struktur, org: buildOrg(data, ym.y, ym.m),
         penyakit: { pak: buildPenyakit(data, ym.y, 'PAK', ym.m), kaptk: buildPenyakit(data, ym.y, 'KAPTK', ym.m) }, kk: health ? buildKK(data, ym.y, ym.m, L.aktif) : null, bmi: health ? buildBMI(data, ym.y, ym.m, L.aktif) : null });
     } catch (e) {
       onNotice?.(/pptxgenjs|dynamically imported|Failed to fetch/i.test(String(e.message)) ? 'Unduh PowerPoint butuh paket pptxgenjs. Jalankan: npm install pptxgenjs' : `Gagal membuat PowerPoint: ${e.message}`);
@@ -230,7 +230,7 @@ export default function Laporan({ data, loading, canPrivate, canWrite, canHealth
     ['Kegiatan SHE (dengan foto)', 'hal. 20 sampai 22', `${buildKegiatan(data, ym.y, ym.m).all.length} kegiatan`, buildKegiatan(data, ym.y, ym.m).all.length > 0],
     ['Meeting KKP level II (MOM, foto, absensi)', 'hal. 21', (() => { const k = buildKkp(data, ym.y, ym.m); return k.head || k.ini.length || k.lalu.length || k.fotos.length ? `${k.ini.length} poin MOM` : 'Belum diisi'; })(), (() => { const k = buildKkp(data, ym.y, ym.m); return Boolean(k.head || k.ini.length || k.lalu.length || k.fotos.length); })()],
     ['PICA kebutuhan manpower', 'hal. 7', `${buildPica(data).length} baris dari Database Manpower`, buildPica(data).length > 0],
-    ['Struktur organisasi', 'hal. 2', buildStruktur(data, ym.y, ym.m) ? 'Gambar terpasang' : 'Belum ada gambar', Boolean(buildStruktur(data, ym.y, ym.m))],
+    ['Struktur organisasi', 'hal. 2', buildOrg(data, ym.y, ym.m).nodes.length ? `Bagan ${buildOrg(data, ym.y, ym.m).nodes.length} posisi` : buildStruktur(data, ym.y, ym.m) ? 'Gambar terpasang' : 'Belum ada bagan atau gambar', Boolean(buildOrg(data, ym.y, ym.m).nodes.length || buildStruktur(data, ym.y, ym.m))],
     ['Kontrol kritis kronis dan BMI', 'hal. 23 dan 24', canHealth ? `${buildKK(data, ym.y, ym.m).n} KK, ${buildBMI(data, ym.y, ym.m).n} BMI` : 'Akses terbatas', canHealth && buildKK(data, ym.y, ym.m).n > 0]
   ];
 
