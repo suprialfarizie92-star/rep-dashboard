@@ -3,7 +3,10 @@ import Icon from './Icon.jsx';
 import { fmt, licenseDocs, norm, val } from './utils.js';
 import './dashboard.css';
 
-const TABS = [['perhatian', 'Perlu perhatian'], ['lewat', 'Lewat'], ['segera', 'Segera'], ['aktif', 'Aktif'], ['semua', 'Semua']];
+const TABS = [['perhatian', 'Perlu perhatian'], ['lewat', 'Lewat'], ['segera', 'Segera'], ['aktif', 'Aktif'], ['semua', 'Semua'], ['bulan', 'Per bulan']];
+const NAMA_BULAN = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+const SURVEY_LEAD = 2; // Authority masuk Form Need Survey 2 bulan (hitungan bulan kalender) sebelum habis berlaku
+const addMonth = (y, m, k) => { const t = y * 12 + m + k; return { y: Math.floor(t / 12), m: ((t % 12) + 12) % 12 }; };
 const TONE = { lewat: 'red', segera: 'amber', aktif: 'green', none: 'gray' };
 const LABEL = { lewat: 'Lewat', segera: 'Segera', aktif: 'Aktif', none: 'Tanpa tanggal' };
 const fmtDate = d => d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -15,6 +18,11 @@ export default function Lisensi({ data, loading, canWrite, preset, onRefresh, on
   const [type, setType] = useState('');
   const [q, setQ] = useState('');
   const [asc, setAsc] = useState(true);
+  const now = new Date();
+  const [bm, setBm] = useState(now.getMonth());
+  const [by, setBy] = useState(now.getFullYear());
+  const [acuan, setAcuan] = useState('expiry'); // 'expiry' = bulan habis berlaku, 'form' = bulan form survey
+  const [dl, setDl] = useState(false);
   useEffect(() => { if (preset?.initial) setTab(preset.initial); }, [preset]);
 
   const all = useMemo(() => licenseDocs(data), [data]);
@@ -23,11 +31,27 @@ export default function Lisensi({ data, loading, canWrite, preset, onRefresh, on
   const count = s => all.filter(it => statusOf(it) === s).length;
   const types = useMemo(() => [...new Set(all.map(i => i.type))].sort(), [all]);
 
+  // Bulan habis berlaku yang dicari: langsung (acuan expiry) atau 2 bulan setelah bulan form (acuan form).
+  const target = acuan === 'form' ? addMonth(by, bm, SURVEY_LEAD) : { y: by, m: bm };
+  const formAt = acuan === 'form' ? { y: by, m: bm } : addMonth(by, bm, -SURVEY_LEAD);
+  const inTarget = it => it.exp && it.exp.getFullYear() === target.y && it.exp.getMonth() === target.m;
+  const survey = useMemo(() => {
+    const seen = new Set();
+    return all.filter(it => it.type === 'Authority' && inTarget(it) && !seen.has(it.id || it.nama) && seen.add(it.id || it.nama))
+      .sort((a, b) => String(a.nama).localeCompare(String(b.nama), 'id'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [all, target.y, target.m]);
+  const unduhForm = async () => {
+    setDl(true);
+    try { const { downloadNeedSurvey } = await import('./needSurvey.js'); await downloadNeedSurvey(survey.map(it => ({ nama: it.nama, exp: it.exp })), { month: formAt.m, year: formAt.y }); } catch (e) { window.alert(`Gagal membuat form: ${e.message}`); } finally { setDl(false); }
+  };
+
   const rows = useMemo(() => {
     const needle = norm(q);
     return all
       .filter(it => {
         const s = statusOf(it);
+        if (tab === 'bulan') { if (!inTarget(it)) return false; if ((acuan === 'form' ? 'Authority' : type) && it.type !== (acuan === 'form' ? 'Authority' : type)) return false; return !needle || [it.nama, it.id, it.jabatan].some(v => norm(v).includes(needle)); }
         if (tab === 'perhatian' ? !(s === 'lewat' || s === 'segera') : tab !== 'semua' && s !== tab) return false;
         if (type && it.type !== type) return false;
         return !needle || [it.nama, it.id, it.jabatan].some(v => norm(v).includes(needle));
@@ -38,7 +62,7 @@ export default function Lisensi({ data, loading, canWrite, preset, onRefresh, on
         return asc ? a.left - b.left : b.left - a.left;
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [all, tab, type, q, asc, win]);
+  }, [all, tab, type, q, asc, win, bm, by, acuan]);
 
   // Tanggal lisensi tersimpan di baris karyawan, jadi "Perpanjang" membuka baris itu untuk diedit.
   const perpanjang = it => onOpen('Data_Karyawan', {
@@ -76,12 +100,25 @@ export default function Lisensi({ data, loading, canWrite, preset, onRefresh, on
           <div className="seg-tabs" role="group" aria-label="Status lisensi">
             {TABS.map(([key, label]) => <button type="button" key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{label}</button>)}
           </div>
-          <select className="dash-select" value={type} onChange={e => setType(e.target.value)} aria-label="Jenis lisensi">
+          <select className="dash-select" value={tab === 'bulan' && acuan === 'form' ? 'Authority' : type} disabled={tab === 'bulan' && acuan === 'form'} onChange={e => setType(e.target.value)} aria-label="Jenis lisensi">
             <option value="">Semua</option>{types.map(x => <option key={x}>{x}</option>)}
           </select>
-          <span className="count">{rows.length} dokumen</span>
+          <span className="count">{rows.length} dokumen{tab === 'bulan' ? ` • ${NAMA_BULAN[target.m]} ${target.y}` : ''}</span>
         </div>
 
+        {tab === 'bulan' && (
+          <div className="lic-bar" style={{ alignItems: 'flex-end', flexWrap: 'wrap', gap: 12 }}>
+            <label>Acuan<select className="dash-select" value={acuan} onChange={e => setAcuan(e.target.value)}>
+              <option value="expiry">Bulan habis berlaku</option><option value="form">Bulan form survey (Authority)</option></select></label>
+            <label>Bulan<select className="dash-select" value={bm} onChange={e => setBm(Number(e.target.value))}>{NAMA_BULAN.map((n, i) => <option key={n} value={i}>{n}</option>)}</select></label>
+            <label>Tahun<select className="dash-select" value={by} onChange={e => setBy(Number(e.target.value))}>{Array.from({ length: 6 }, (_, i) => now.getFullYear() - 1 + i).map(y => <option key={y} value={y}>{y}</option>)}</select></label>
+            <span className="subtle" style={{ flex: '1 1 260px' }}>
+              Menampilkan lisensi yang habis berlaku di <b>{NAMA_BULAN[target.m]} {target.y}</b>.
+              {' '}Authority yang habis di bulan itu masuk <b>Form Need Survey {NAMA_BULAN[formAt.m]} {formAt.y}</b> ({SURVEY_LEAD} bulan sebelumnya).
+            </span>
+            <button type="button" className="btn primary" disabled={dl || !survey.length} onClick={unduhForm}><Icon name="download" size={15} /> {dl ? 'Membuat...' : `Unduh Form Need Survey (${survey.length} orang)`}</button>
+          </div>
+        )}
         {loading && !data.length ? (
           <div className="loading-state"><div className="spinner" />Memuat data...</div>
         ) : (
