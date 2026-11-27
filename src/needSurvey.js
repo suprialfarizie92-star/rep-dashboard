@@ -8,23 +8,53 @@ const TEMPLATE_ROWS = 13; // baris nama yang tersedia di template (baris 12 samp
 const FIRST_ROW = 12;
 const TAIL_ROW = 25; // baris pertama setelah tabel nama
 
+export const isOn = v => { const x = String(v ?? '').trim().toLowerCase(); return x !== '' && !['0', '-', 'false', 'tidak', 'no', 'n'].includes(x); };
+/** Urutan di form: GL Mekanik, jabatan lain, Operator DT, lalu Operator A2B paling akhir; di dalam kelompok urut nama. */
+export const jabatanRank = j => {
+  const t = String(j || '').toLowerCase();
+  if (/mekanik/.test(t) && /\bgl\b/.test(t)) return 0;
+  if (/a2b/.test(t)) return 3;
+  if (/\bdt\b/.test(t)) return 2;
+  return 1;
+};
+export const sortSurvey = list => [...list].sort((a, b) => jabatanRank(a.jabatan) - jabatanRank(b.jabatan) || String(a.nama).localeCompare(String(b.nama), 'id'));
+
+/** Kolom bulatan di template (indeks kolom mulai 0, offset kiri dan kanan dalam EMU); kolom OTHER memang tanpa bulatan. */
+const CIRCLES = [[5, 143784, 295276], [6, 143784, 295276], [7, 142875, 294367], [8, 143784, 295276], [10, 194583, 346075], [11, 194583, 346075], [12, 182562, 334054], [14, 175536, 327028], [15, 166008, 317500], [17, 166008, 317500], [18, 168729, 320221], [20, 121104, 272596], [21, 121104, 272596]];
+/** Kolom form yang punya centang di Data Karyawan (kolom G = P360, H = FMX420, K = PC210/300, L = PC350, O = D85 SS). */
+export const CERT_COL = { 6: 'P360', 7: 'FMX420', 10: 'PC210', 11: 'PC350', 14: 'D85' };
+const COL_LAMA = 20;
+const oval = (id, col, c1, c2, row0, on) => `<xdr:twoCellAnchor><xdr:from><xdr:col>${col}</xdr:col><xdr:colOff>${c1}</xdr:colOff><xdr:row>${row0}</xdr:row><xdr:rowOff>18822</xdr:rowOff></xdr:from><xdr:to><xdr:col>${col}</xdr:col><xdr:colOff>${c2}</xdr:colOff><xdr:row>${row0}</xdr:row><xdr:rowOff>171450</xdr:rowOff></xdr:to><xdr:sp macro="" textlink=""><xdr:nvSpPr><xdr:cNvPr id="${id}" name="Oval ${id}"/><xdr:cNvSpPr/></xdr:nvSpPr><xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="151492" cy="152628"/></a:xfrm><a:prstGeom prst="ellipse"><a:avLst/></a:prstGeom><a:solidFill><a:schemeClr val="${on ? 'tx1' : 'bg1'}"/></a:solidFill><a:ln w="3175"><a:solidFill><a:schemeClr val="tx1"/></a:solidFill></a:ln></xdr:spPr></xdr:sp><xdr:clientData/></xdr:twoCellAnchor>`;
+
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const serial = d => Math.round((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) - Date.UTC(1899, 11, 30)) / 86400000);
 const proper = s => String(s || '').trim().toLowerCase().replace(/(^|[\s.'(-])(\p{L})/gu, (_, a, b) => a + b.toUpperCase());
 const istr = (ref, style, text) => `<c r="${ref}" s="${style}" t="inlineStr"><is><t xml:space="preserve">${esc(text)}</t></is></c>`;
 const COLS = 'CDEFGHIJKLMNOPQRSTUV'.split('');
 
-/** Satu baris nama: nomor, nama, masa berlaku authority, kolom versatility kosong, status LAMA diberi tanda V. */
+/** Satu baris nama: nomor, nama, masa berlaku authority. Bulatan versatility dan status digambar terpisah (lihat circlesXml). */
 function personRow(r, i, p) {
   const cells = COLS.map(c => {
     const ref = `${c}${r}`;
     if (c === 'C') return p ? `<c r="${ref}" s="17"><v>${i + 1}</v></c>` : `<c r="${ref}" s="17"/>`;
     if (c === 'D') return p ? istr(ref, 22, proper(p.nama)) : `<c r="${ref}" s="22"/>`;
     if (c === 'E') return p && p.exp ? `<c r="${ref}" s="19"><v>${serial(p.exp)}</v></c>` : `<c r="${ref}" s="19"/>`;
-    if (c === 'U') return p ? istr(ref, 17, 'V') : `<c r="${ref}" s="17"/>`;
     return `<c r="${ref}" s="20"/>`;
   }).join('');
   return `<row r="${r}" spans="3:22" x14ac:dyDescent="0.35">${cells}</row>`;
+}
+
+/** Bulatan di setiap kolom versatility dan status: hitam bila sesuai checklist di Data Karyawan, putih bila tidak. */
+function circlesXml(people, total) {
+  let id = 100; let out = '';
+  for (let i = 0; i <= total; i += 1) { // total baris nama + 1 baris penutup tabel
+    const p = people[i]; const row0 = FIRST_ROW - 1 + i;
+    CIRCLES.forEach(([col, c1, c2]) => {
+      const on = Boolean(p) && (col === COL_LAMA || (CERT_COL[col] && p.certs && p.certs[CERT_COL[col]]));
+      out += oval(id, col, c1, c2, row0, on); id += 1;
+    });
+  }
+  return out;
 }
 
 /** Geser nomor baris (>= TAIL_ROW) sejauh k baris pada sheetData dan daftar merge. */
@@ -37,7 +67,7 @@ function shiftTail(xml, k) {
 }
 
 /**
- * @param {{nama: string, exp: Date}[]} people Authority yang habis berlaku 2 bulan setelah bulan form (sudah diurutkan)
+ * @param {{nama: string, exp: Date, certs?: Record<string, boolean>}[]} people Authority yang habis berlaku 2 bulan setelah bulan form (sudah diurutkan dengan sortSurvey)
  * @param {{month: number, year: number, date?: Date, type?: 'blob'|'nodebuffer'}} opt month = 0..11 (bulan form)
  */
 export async function buildNeedSurvey(people, { month, year, date = new Date(), type = 'blob' }) {
@@ -61,6 +91,8 @@ export async function buildNeedSurvey(people, { month, year, date = new Date(), 
     .replace(/<c r="C6" s="7" t="s"><v>\d+<\/v><\/c>/, judul)
     .replace(/<dimension ref="C2:V41"\/>/, `<dimension ref="C2:V${41 + k}"/>`);
   zip.file('xl/worksheets/sheet1.xml', headNew + rows + tail);
+  const drawing = await zip.file('xl/drawings/drawing1.xml').async('string');
+  zip.file('xl/drawings/drawing1.xml', drawing.replace('</xdr:wsDr>', `${circlesXml(people, total)}</xdr:wsDr>`));
 
   const nm = SHEET_NAME[month];
   let wb = await zip.file('xl/workbook.xml').async('string');

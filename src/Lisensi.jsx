@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Icon from './Icon.jsx';
 import { fmt, licenseDocs, norm, val } from './utils.js';
+import { downloadNeedSurvey, isOn, sortSurvey } from './needSurvey.js';
 import './dashboard.css';
 
 const TABS = [['perhatian', 'Perlu perhatian'], ['lewat', 'Lewat'], ['segera', 'Segera'], ['aktif', 'Aktif'], ['semua', 'Semua'], ['bulan', 'Per bulan']];
@@ -37,13 +38,14 @@ export default function Lisensi({ data, loading, canWrite, preset, onRefresh, on
   const inTarget = it => it.exp && it.exp.getFullYear() === target.y && it.exp.getMonth() === target.m;
   const survey = useMemo(() => {
     const seen = new Set();
-    return all.filter(it => it.type === 'Authority' && inTarget(it) && !seen.has(it.id || it.nama) && seen.add(it.id || it.nama))
-      .sort((a, b) => String(a.nama).localeCompare(String(b.nama), 'id'));
+    const list = all.filter(it => it.type === 'Authority' && inTarget(it) && !seen.has(it.id || it.nama) && seen.add(it.id || it.nama))
+      .map(it => ({ ...it, certs: Object.fromEntries(['P360', 'FMX420', 'PC210', 'PC350', 'D85'].map(k => [k, isOn(val(it.row, k))])) }));
+    return sortSurvey(list); // GL Mekanik, Operator DT, jabatan lain, lalu Operator A2B
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [all, target.y, target.m]);
   const unduhForm = async () => {
     setDl(true);
-    try { const { downloadNeedSurvey } = await import('./needSurvey.js'); await downloadNeedSurvey(survey.map(it => ({ nama: it.nama, exp: it.exp })), { month: formAt.m, year: formAt.y }); } catch (e) { window.alert(`Gagal membuat form: ${e.message}`); } finally { setDl(false); }
+    try { await downloadNeedSurvey(survey.map(it => ({ nama: it.nama, exp: it.exp, certs: it.certs })), { month: formAt.m, year: formAt.y }); } catch (e) { window.alert(`Gagal membuat form: ${e.message}`); } finally { setDl(false); }
   };
 
   const rows = useMemo(() => {
