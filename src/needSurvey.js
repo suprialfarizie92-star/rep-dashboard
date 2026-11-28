@@ -9,13 +9,15 @@ const FIRST_ROW = 12;
 const TAIL_ROW = 25; // baris pertama setelah tabel nama
 
 export const isOn = v => { const x = String(v ?? '').trim().toLowerCase(); return x !== '' && !['0', '-', 'false', 'tidak', 'no', 'n'].includes(x); };
-/** Urutan di form: GL Mekanik, jabatan lain, Operator DT, lalu Operator A2B paling akhir; di dalam kelompok urut nama. */
+/** Urutan di form: GL, Mekanik, Welder, jabatan lain, Operator DT, lalu Operator A2B (termasuk Operator Excavator dan Operator Dozer) paling akhir; di dalam kelompok urut nama. */
 export const jabatanRank = j => {
-  const t = String(j || '').toLowerCase();
-  if (/mekanik/.test(t) && /\bgl\b/.test(t)) return 0;
-  if (/a2b/.test(t)) return 3;
-  if (/\bdt\b/.test(t)) return 2;
-  return 1;
+  const t = String(j || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+  if (/\b(gl|group leader|grup leader)\b/.test(t)) return 0; // 1. GL
+  if (/mekanik|mechanic/.test(t)) return 1; // 2. Mekanik
+  if (/welder|juru las/.test(t)) return 2; // 3. Welder
+  if (/a2b|excavator|dozer|doser/.test(t)) return 5; // 6. Operator A2B, Excavator, Dozer paling akhir
+  if (/\bdt\b|dump ?truck/.test(t)) return 4; // 5. Operator DT
+  return 3; // 4. jabatan lain
 };
 export const sortSurvey = list => [...list].sort((a, b) => jabatanRank(a.jabatan) - jabatanRank(b.jabatan) || String(a.nama).localeCompare(String(b.nama), 'id'));
 
